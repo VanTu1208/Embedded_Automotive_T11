@@ -49,8 +49,51 @@ void GPIO_Write(GPIO_TypeDef* GPIOx, uint16_t PortVal); // Ghi giá trị "PortV
   
 **Với x là tên port = (A,B,C,...) và y là số pin = (0,1,2,3,...)** 
 
-> **Ví dụ BlinkLed PC13 **
+### Ví dụ BlinkLed PC13
+![2 Leds on STM32F103C8T6](https://i.imgur.com/y7LDm8Z.png)  
 
+**Trên STM32F103C8T6 có hai led**  
++) Led báo nguồn  
++) Led được tích hợp trên chân PC13 có Anode nối VCC, Cathode nối PC13 nên khi PC13 = 0V thì Led sáng
+
+```cpp
+#include "stm32f10x.h"                  // Device header
+#include "stm32f10x_gpio.h"             // Keil::Device:StdPeriph Drivers:GPIO
+#include "stm32f10x_rcc.h"              // Keil::Device:StdPeriph Drivers:RCC
+
+void delay(uint32_t time) {
+    for(int i = 0; i < time ; i++);
+} // Moi i chay duoc ~1us
+
+void RCC_config(void){ // Hàm cấp xung GPIO
+    //Hàm cấp xung clock cho GPIOC
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
+}
+
+void GPIO_config(void){ // Hàm cấu hình GPIO
+    //Cau hinh chan PC13
+    GPIO_InitTypeDef GPIO_InitStruct;
+    GPIO_InitStruct.GPIO_Pin = GPIO_Pin_13;
+    GPIO_InitStruct.GPIO_Mode = GPIO_Mode_Out_PP; //Output Push-Pull: kéo lên 1 hoặc 0 không cần điện trở nội
+    GPIO_InitStruct.GPIO_Speed = GPIO_Speed_10MHz; // Tốc độ ngoại vi 10Mhz
+    
+    GPIO_Init(GPIOC, &GPIO_InitStruct );
+}
+
+int main(){
+    RCC_config();
+    GPIO_config();
+    while(1) {
+        GPIO_SetBits(GPIOC, GPIO_Pin_13); // Đặt bit 1 vào PC13 (Đèn tắt)
+        delay(5000000);
+        GPIO_ResetBits(GPIOC, GPIO_Pin_13); // Đặt bit 0 vào PC13 (Đèn sáng)
+        delay(2000000);
+    }   
+}
+
+```
+**Tại hàm main() gọi hai hàm được thiết lập từ trước với chức năng cấp xung cho GPIOC và cấu hình PC13 làm ngõ ra để điều khiển LED  
+Trong hàm while Bật tắt led liên tục sử dụng hàm delay tương đối thay vì sử dụng Timer**
 
 </details>
 
