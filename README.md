@@ -1,4 +1,4 @@
-# Advance-C-Cpp-Algorithm-T11
+# Embedded In Automotive - T11
 ## Bài 2: GPIO
 <details><summary>Xem</summary>
   
@@ -249,5 +249,136 @@ int main(){
 }
 ```
 </details>
+
+## Bài 4: Communication Protocols
+<details><summary>Xem</summary>  
+
+### 1. Truyền nhận dữ liệu
+Truyền nhận dữ liệu trên MCU là quá trình trao đổi các tín hiệu điện áp biểu diễn thành các bit trên các chân của MCU.
+
+![Truyền data](https://i.imgur.com/goMtf0I.png)
+
+- 3.3V hoặc 5V được biểu diễn bởi bit 1
+- 0V được biểu diễn bởi bit 0
+
+Ví dụ MCU1 truyền cho MCU2 ký tự "h" thì MCU1 sẽ chuyển đổi "h" theo mã ASCII có mã nhị phân 0110 1000 và truyền từng bit đến MCU2.
+
+Có hai kiểu truyền dữ liệu: Truyền **nối tiếp** và **song song**
+- Truyền song song: Sử dụng nhiều dây, mỗi dây một bit
+- Truyền nối tiếp: Sử dụng một dây duy nhất để truyền liên tiếp nhiều bit
+**Vấn đề**: Nếu truyền nhiều bit cùng giá trị thì không thể phân biệt các bit. Vì thế, ta cần đến những **chuẩn giao tiếp** (Communication Protocols).
+
+### 2. SPI (Serial Peripheral Interface)
+#### Tính chất:
+-  Truyền nối tiếp, đồng bộ (Có chân SCK)
+- Truyền song công (Có hai dây dữ liệu MOSI - Master Output Slave Input và MISO - Master Input Slave Output)
+- Hoạt động ở cơ chế Master - Slave, có chân CS - Chip Select để chọn Slave muốn giao tiếp
+![SPI](https://i.imgur.com/wwNFvru.png)
+
+#### Chức năng các chân
+- SCK: Chân được điều khiển bởi Master tạo xung Clock gửi cho Slave để đồng bộ truyền nhận dữ liệu.
+- CS (Chip Select) hoặc SS (Slave Select): Chân điều khiển bởi Master chọn Slave để giao tiếp. Nếu có nhiều Slave thì có nhiều chân CS.
+- MOSI (Master Output Slave Input): Chân truyền dữ liệu từ Master đến Slave.
+- MISO (Master Inpur Slave Output): Điều khiển bởi Slave gửi dữ liệu đến Master. 
+
+#### Quá trình truyền dữ liệu
+- Trước khi truyền dữ liệu, Master sẽ kéo chân CS của Slave cần giao tiếp xuống 0 để báo hiệu muốn truyền nhận.
+- Master sẽ tạo xung Clock để truyền đến Slave kèm theo một bit dữ liệu và đồng thời Slave cũng gửi lại cho Master một bit dữ liệu khác.
+- Các thanh ghi sẽ dịch bit và cập nhật giá trị truyền nhận
+- Lặp lại quá trình đến khi truyền xong dữ liệu
+![Truyền data SPI](https://i.imgur.com/UcLfdyk.png)
+
+#### 4 chế độ hoạt động
+Dựa trên Clock Polarity (CPOL) và Clock Phase (CPHA) 
+![4 chế độ](https://i.imgur.com/qTfMUcD.png)
+- CPOL = 0: Khi không có dữ liệu SCK = 0
+- CPOL = 1: Khi không có dữ liệu SCK = 1
+- CPHA = 0: Truyền dữ liệu trước khi tạo xung
+- CPHA = 1: Truyền dữ liệu sau khi tạo xung
+
+Kết hợp các trường hợp trên ta được bảng sau:
+![4 trường hợp](https://i.imgur.com/dy43EC9.png)
+
+### 3. I2C (Inter-Integrated Circuit)
+
+![I2C](https://i.imgur.com/OwtDaI7.png)
+#### Tính chất:
+
+- Truyền dữ liệu nối tiếp, đồng bộ
+- Hoạt động ở chế độ bán song công
+- Hoạt động ở cơ chế Master Slave, sử dụng địa chỉ riêng để phân biệt Slave
+- Sử dụng hai dây SDA và SCL để giao tiếp
+- Cần có điện trở nối hai dây nối lên nguồn để tạo mức điện áp 3.3/5V khi chưa có dữ liệu vì hai dây thả nổi nên MCU không hiểu được mức điện áp.
+
+#### Chức năng các dây:
+- SDA: Dây truyền dữ liệu truyền nhận.
+- SCL: Dây đồng bộ truyền nhận dữ liệu do Master điều khiển tạo xung Clock.
+
+#### I2C Data Frame:
+![Data Frame](https://i.imgur.com/mZ82odf.png)
+
+- Trước khi truyền/nhận dữ liệu Master sẽ gửi tín hiệu Start Condition: SDA được kéo xuống mức 0 trước sau đó đến SCL xuống mức 0.
+- Sau tín hiệu Start, Master sẽ gửi 8 bit gồm 7 địa chỉ và 1 bit Read/Write kèm theo xung Clock cho tất cả Slave nhận. Slave có trùng địa chỉ với địa chỉ được yêu cầu từ Master sẽ đọc bit Read/Write để xác nhận chức năng truyền hoặc nhận dữ liệu từ Master 
+    - Nếu R/W = 1: Master đọc dữ liệu từ Slave (Slave chế độ truyền)
+    - Nếu R/W = 0: Master ghi dữ liệu đến Slave (Slave chế độ đọc)
+- Sau đó Slave có trùng địa chỉ sẽ gửi lại Master một tín hiệu ACK = 0 (SDA = 0), sau đó Master tiếp tục truyền dữ liệu 
+    - Nếu không có Slave nào trùng với địa chỉ được yêu cầu từ Master thì không có gói phản hồi ACK (SDA = 1) thì Master dừng việc truyền dữ liệu
+- Sau đó, không truyền gì cả, tức SDA = 1
+- Trước khi tiếp tục truyền dữ liệu, kéo SDA = 0
+- Truyền 8 bit dữ liệu đến Slave. Slave nhận được sẽ tiếp tục truyền lại gói tin phản hồi ACK = 0.
+- Master nhận được ACK sẽ kết thúc gói tin bằng cách kéo chân SCL lên 1 trước sau đó kéo chân SDA lên 1
+
+### 4. UART (Universal Asynchronous Receiver-Transmitter)
+![UART](https://i.imgur.com/ZrhsvAg.png)
+#### Tính chất
+- Được gọi là **giao thức truyền thông phần cứng**: Chỉ giao tiếp 1 - 1 giữa hai thiết bị cố định
+- Truyền dữ liệu nối tiếp không đồng bộ
+- Hoạt động ở chế độ song công
+
+#### Chức năng các chân:
+- Tx: Chân truyền dữ liệu điều
+- Rx: Chân nhận dữ liệu về
+- Vì thế hai các chân được mắc chéo với nhau Tx1 - Rx2, Tx2 - Rx1
+
+#### Không có chân Clock, làm sao để đồng bộ?
+- Hai MCU sẽ căn khoảng thời gian giữa hai lần gửi dữ liệu để đồng bộ truyền nhận bằng cách tạo Tỉmer
+- Đơn vị thống nhất thời gian giữa hai MCU gọi là **BaudRate** (Số bit truyền trong 1 giây)
+- Ví dụ: BaudRate = 9600
+    - Tức truyền được 9600bits/s = 9600bits/1000ms
+    - Nghĩa là 1 bit truyền đi mất khoảng 0.10467ms
+    - Hai MCU sẽ tạo Timer để gửi nhận cùng lúc dữ liệu theo thời gian trên
+
+#### UART Data Frame:
+![UART Data Frame](https://i.imgur.com/lv3DRsF.png)
+- Khi không có dữ liệu Tx = Rx = 1
+- Trước khi truyền dữ liệu: Kéo chân Tx của MCU truyền từ bit 1 xuống bit 0. Sau đó delay một khoảng BaudRate. Bên MCU nhận sẽ đọc chân RX = 0 để kiểm tra có dữ liệu truyền tới hay không.
+- Sau đó MCU truyền sẽ dịch dữ liệu và gửi 5 - 9 bits qua chân TX. Bên MCU nhận sẽ đọc liên tiếp 5 - 8 bits dữ liệu sau những khoảng thời gian delay được tạo từ Timer theo BaudRate.
+- Sau đó MCU truyền gửi bit kiểm tra lỗi Polarity (có hoặc không), có hai loại:
+    - Parity chẵn: Thêm bit 1 hoặc 0 để tổng bit 1 trong data là chẵn.
+    - Parity lẻ: Thêm bit 1 hoặc 0 để tổng bit 1 trong data là lẻ.
+    - Nhược điểm: Nếu lỗi với số chẵn bit thì không thể kiểm tra được lỗi.
+- Bên nhận kiểm tra lỗi bằng cách tính tổng số bit 1 trong data và xem xét loại Parity để xác định đúng Serial.
+- Nếu Data sai thì không nhận dữ liệu.
+- Sau cùng MCU gửi sẽ gửi tín hiệu Stop bằng cách đưa chân TX từ 0 lên 1.
+
+
+
+</details>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
