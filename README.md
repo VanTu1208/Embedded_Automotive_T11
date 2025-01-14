@@ -681,6 +681,306 @@ int main(){
 </details>
 
 
+## Bài 6: I2C Software & I2C Hardware
+
+<details><summary>Xem</summary>  
+
+### I2C Software
+
+Hai bước thực hiện
+- Xác định các chân I2C
+- Cấu hình GPIO
+
+#### 1. Xác định các chân I2C
+```cpp
+#define I2C_SCL 	GPIO_Pin_6
+#define I2C_SDA		GPIO_Pin_7
+#define I2C_GPIO 	GPIOB
+
+void RCC_Config(){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+}
+
+```
+Xác định chân SCL là PB6 và SDA là PB7. Sau đó cấp xưng cho GPIOB và Timer2
+#### 2. Cấu hình GPIO
+```cpp
+void GPIO_Config(){
+	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
+	GPIO_InitStructure.GPIO_Pin = I2C_SDA| I2C_SCL;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	
+	GPIO_Init(I2C_GPIO, &GPIO_InitStructure);
+}
+```
+Cấu hình SDA và SCL là Output Open-Drain: Có khả năng kéo chân xuống mức 0 và dùng điện trở để kéo lên 1.
+Gọi hàm Init để gán thông số vào các chân I2C của GPIOB
+
+#### 3. Cấu hình mô phỏng truyền nhận
+```cpp
+#define WRITE_SDA_0 	GPIO_ResetBits(I2C_GPIO, I2C_SDA)
+#define WRITE_SDA_1 	GPIO_SetBits(I2C_GPIO, I2C_SDA)
+#define WRITE_SCL_0 	GPIO_ResetBits(I2C_GPIO, I2C_SCL)
+#define WRITE_SCL_1 	GPIO_SetBits(I2C_GPIO, I2C_SCL)
+#define READ_SDA_VAL 	GPIO_ReadInputDataBit(I2C_GPIO, I2C_SDA)
+```
+Tạo các Macro để sử dụng thuận tiện hơn trong việc ghi các chân SDA, SCL và đọc giá trị tại chân SDA.
+
+
+```cpp
+typedef enum {
+	NOT_OK, OK //status la bien co hai gia tri: 0:NOT_OK va 1:OK
+} status;
+
+typedef enum {
+	NACK, ACK //status la bien co hai gia tri: 0:NOT_OK va 1:OK
+} ACK_Bit;
+```
+Tạo hai Enum chứa giá trị được cấu hình của status (truyền thành công?) và ACK_bit(Giá trị của ACK)
+```cpp
+void I2C_Config(void){
+	WRITE_SDA_1; 
+	delay_us(1);
+	WRITE_SCL_1;
+	delay_us(1);
+}
+```
+Cấu hình cho các chân SPI khi chưa truyền dữ liệu thì SDA và SCL đều kéo lên mức 1
+```cpp
+void I2C_Start(){
+	//Dam bao rang SDA va SCL = 1 truoc khi truyen data
+	WRITE_SDA_1;
+	delay_us(1);	
+	WRITE_SCL_1;  	
+	delay_us(3);
+	//SDA keo xuong 0 truoc SCL	
+	WRITE_SDA_0;
+	delay_us(3);
+	WRITE_SCL_0;
+	delay_us(3);
+}
+```
+Hàm Start: Gán lại hai chân lên 1 trước khi truyền. Sau đó bắt đầu tín hiệu Start bằng cách kéo SDA xuống 0 trước sau đó kéo SCL xuống 0.
+
+```cpp
+void I2C_Stop(){
+	
+	WRITE_SDA_0;
+	delay_us(3);
+	WRITE_SCL_1; 	//SCL set to 1 before SDA.
+	delay_us(3);
+	WRITE_SDA_1;
+	delay_us(3);
+}
+``` 
+Tương tự hàm Stop sẽ đảm bảo SDA = 0 trước, kéo chân SCL lên 1 trước sau đó kéo SDA lên 1.
+
+```cpp
+status I2C_Write(uint8_t u8Data){	
+
+	status stRet;
+	for(int i=0; i<8; i++){	
+		if (u8Data & 0x80)// 0b10000000
+		{
+			WRITE_SDA_1;
+		} else {
+			WRITE_SDA_0;
+		}	
+		delay_us(3);
+		WRITE_SCL_1;
+		delay_us(5);
+		WRITE_SCL_0;
+		delay_us(2);
+		
+		u8Data <<= 1;
+	}
+	WRITE_SDA_1;					
+	delay_us(3);
+
+	WRITE_SCL_1;
+	delay_us(3);
+
+	if (READ_SDA_VAL) {	
+		stRet = NOT_OK;				
+	} else {
+		stRet = OK;					
+	}
+
+	delay_us(2);
+	WRITE_SCL_0;
+	delay_us(5);
+	
+	return stRet;
+}
+```
+Hàm gửi dữ liệu đến Slave của Master
+- Đầu tiên, tạo mặt nạ để and với dữ liệu để tìm ra bit truyền là 1 hay 0
+- Sau đó truyền dữ liệu qua SDA với giá trị vừa tìm được kèm theo một xung Clock được tạo bằng cách kéo và hạ chân SCL trong một khoảng delay(5us).
+- Dịch một bit và tiếp tục and với mặt nạ để tiếp tục truyền.
+- Sau khi truyền 8 bit dữ liệu Master sẽ chờ để nhận ACK. Mặc định SDA được kéo lên 1.
+- Tạo xung để nhận ACK từ Slave. Nếu nhận SDA = 0 thì nhận được ACK, nếu SDA = 1 thì không nhận được ACK.
+- Hàm trả về trạng thái của ACK nhận được.
+
+```cpp
+uint8_t I2C_Read(ACK_Bit _ACK){	
+	uint8_t i;						
+	uint8_t u8Ret = 0x00;
+	//Dam bao SDA pull_up truoc khi nhan
+	WRITE_SDA_1;
+	delay_us(3);	
+	//Tao 8 clock va doc du lieu ghi vao u8Ret
+	for (i = 0; i < 8; ++i) {
+		u8Ret <<= 1;
+		WRITE_SCL_1;
+		delay_us(3);
+		if (READ_SDA_VAL) {//Doc du lieu chan ACK
+			u8Ret |= 0x01;
+		}
+		delay_us(2);
+		WRITE_SCL_0;
+		delay_us(5);
+	}
+	if (_ACK) {	//Neu tham so truyen vao la ACK thi truyen ACK di 
+		WRITE_SDA_0;
+	} else {
+		WRITE_SDA_1;
+	}
+	delay_us(3);
+	//Tao xung de truyen ACK di
+	WRITE_SCL_1;
+	delay_us(5);
+	WRITE_SCL_0;
+	delay_us(5);
+
+	return u8Ret;
+}
+```
+Hàm đọc dữ liệu từ Slave
+- Tham số truyền vào là ACK_bit để xác nhận muốn đọc tiếp hay dừng lại
+- Khởi tạo SDA = 1
+- Tạo xung Clock, đồng thời đọc dữ liệu ở chân SDA và dịch vào dữ liệu 8 bit nhận được
+- Sau đó kiểm tra tham số ```_ACK``` để xác định có truyền lại ACK hay không kèm theo xung Clock
+
+**Dựa vào khung truyền của từng Slave mà sẽ có những cấu trúc truyền khác nhau**
+
+### I2C Hardware
+
+Các bước thực hiện
+- Xác định các chân GPIO của I2C
+- Cấu hình GPIO
+- Cấu hình I2C
+
+#### 1. Xác định các chân GPIO
+```cpp
+#define I2C_SCL 	GPIO_Pin_6
+#define I2C_SDA		GPIO_Pin_7
+#define I2C_GPIO 	GPIOB
+#define DS1307_ADDRESS 0x50
+
+void RCC_Config(void) {
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2|RCC_APB1Periph_I2C1, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB , ENABLE);
+}
+```
+Trên STM32F103C8T6 có hai bộ I2C1 và I2C2. Với SPI1 sẽ sử dụng hai chân PB6 và PB7. Và ta sẽ cấp xung cho Timer và I2C1, đồng thời cấp cho GPIOB để GPIO hoạt động.
+
+#### 2. Cấu hình GPIO
+```cpp
+void GPIO_Config(void) {
+    GPIO_InitTypeDef GPIO_InitStructure;
+
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7; 
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_OD;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+}
+```
+Tương tự với SPI, các GPIO cũng sử dụng mode AF để sử dụng cho chế độ thay thế. Nhưng với I2C sẽ sử dụng Open-Drain
+#### 3. Cấu hình I2C
+```cpp
+void I2C_Config(void) {
+	I2C_InitTypeDef I2C_InitStruct;
+	I2C_InitStruct.I2C_Mode = I2C_Mode_I2C;
+	I2C_InitStruct.I2C_ClockSpeed = 400000;
+	I2C_InitStruct.I2C_DutyCycle = I2C_DutyCycle_2;
+	I2C_InitStruct.I2C_Ack = I2C_Ack_Enable;
+	I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+
+	I2C_Init(I2C1, &I2C_InitStruct);
+	I2C_Cmd(I2C1, ENABLE);
+}
+```
+Tương tự các ngoại vi khác, các tham số I2C được cấu hình trong Struct I2C_InitTypeDef:
+- I2C_Mode: Cấu hình chế độ hoạt động cho I2C:
+	- I2C_Mode_I2C: Chế độ I2C FM(Fast Mode);
+	- I2C_Mode_SMBusDevice&I2C_Mode_SMBusHost: Chế độ SM(Slow Mode).
+- I2C_ClockSpeed: Cấu hình clock cho I2C, tối đa 100khz với SM và 400khz ở FM.
+- I2C_DutyCycle: Cấu hình chu kì nhiệm vụ của xung:
+	- I2C_DutyCycle_2: Thời gian xung thấp/xung cao = 2;
+	- I2C_DutyCycle_16_9: Thời gian xung thấp/xung cao =16/9;
+	Ví dụ:
+	- I2C_DutyCycle_2: tLow/tHigh = 2 => tLow = 2tHigh  
+		100000khz, 1xung 10us 6.66us low, 3.33 high
+	- I2C_DutyCycle_16_9: tLow/tHigh = 16/9 => 9tLow = 16tHigh.
+- I2C_OwnAddress1: Cấu hình địa chỉ slave.
+- I2C_Ack: Cấu hình ACK, có sử dụng ACK hay không.
+- I2C_AcknowledgedAddress: Cấu hình số bit địa chỉ. 7 hoặc 10 bit
+
+**Các hàm truyện nhận I2C**
+- Hàm I2C_Send7bitAddress(I2C_TypeDef* I2Cx, uint8_t Address, uint8_t I2C_Direction), gửi đi 7 bit address để xác định slave cần giao tiếp. Hướng truyền được xác định bởi I2C_Direction để thêm bit RW.
+- Hàm I2C_SendData(I2C_TypeDef* I2Cx, uint8_t Data) gửi đi 8 bit data.
+- Hàm I2C_ReceiveData(I2C_TypeDef* I2Cx) trả về 8 bit data.
+- Hàm I2C_CheckEvent(I2C_TypeDef* I2Cx, uint32_t I2C_EVENT) trả về kết quả kiểm tra I2C_EVENT tương ứng:
+	- I2C_EVENT_MASTER_MODE_SELECT: Đợi Bus I2C về chế độ rảnh.
+	- I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED: Đợi xác nhận của Slave với yêu cầu nhận của Master.
+	- I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED: Đợi xác nhận của Slave với yêu cầu ghi của Master.
+	- I2C_EVENT_MASTER_BYTE_TRANSMITTED: Đợi truyền xong 1 byte data từ Master.
+	- I2C_EVENT_MASTER_BYTE_RECEIVED: Đợi Master nhận đủ 1 byte data.
+
+```cpp
+I2C_GenerateSTART(I2C1, ENABLE);
+ //Waiting for flag
+ while(!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_MODE_SELECT));
+I2C_Send7bitAddress(I2C1, 0x44, I2C_Direction_Transmitter);
+//And check the transmitting
+while(!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED));
+
+```
+Hàm truyền địa chỉ chọn Slave:
+- Tạo tín hiệu bắt đầu bằng hàm ```I2C_GenerateSTART```
+- Đợi ACK từ Slave
+- Và truyền 7 bit địa chỉ đến các Slave trong mạng để chọn Slave cần giao tiếp
+- Chờ đến khi truyền xong và có xác nhận từ Slave
+
+```cpp
+void Send_I2C_Data(uint8_t data)
+{
+	I2C_SendData(I2C1, data);
+	// wait for the data trasnmitted flag
+	while(!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED));
+}
+
+```
+Hàm gửi 8 bit dữ liệu:
+- Gửi data qua I2C1 và chờ đến khi hoàn tất truyền
+```cpp
+uint8_t Read_I2C_Data(){
+	
+	uint8_t data = I2C_ReceiveData(I2C1);
+	while(!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_BYTE_RECEIVED));
+	return data;
+}
+
+```
+Hàm nhận 8 bit dữ liệu:
+
+Sử dụng các hàm trên theo các câu trúc khác nhau để giao tiếp với slave
+
+</details>
+
+
 
 
 
