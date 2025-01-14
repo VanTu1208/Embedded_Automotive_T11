@@ -366,6 +366,318 @@ Kết hợp các trường hợp trên ta được bảng sau:
 </details>
 
 
+## Bài 4: SPI Software & SPI Hardware
+
+<details><summary>Xem</summary>  
+
+### SPI Software
+
+Dùng các chân GPIO và delay để mô phỏng hoạt động của SPI
+
+Có hai bước để thực thi:
+- Xác định các chân (có 4 chân)
+- Cấu hình GPIO 
+
+#### 1. Xác định các chân SPI 
+```cpp
+#define SPI_SCK_Pin GPIO_Pin_0
+#define SPI_MISO_Pin GPIO_Pin_1
+#define SPI_MOSI_Pin GPIO_Pin_2
+#define SPI_CS_Pin GPIO_Pin_3
+#define SPI_GPIO GPIOA
+#define SPI_RCC RCC_APB2Periph_GPIOA
+```
+Sử dụng các chân trong GPIOA và được cấp xung bởi APB2. Gán các chân GPIO bằng tên các chân dữ liệu SPI.
+
+```cpp
+void RCC_config(void){
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+		RCC_APB2PeriphClockCmd(SPI_RCC, ENABLE);
+}
+```
+Sau đó cấp xung cho SPI_RCC tức GPIOA và cấp cho Timer để tạo hàm delay phục vụ truyền nhận dữ liệu
+
+#### 2. Cấu hình các chân SPI
+```cpp
+void GPIO_Config(void){
+	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitStructure.GPIO_Pin = SPI_SCK_Pin| SPI_MOSI_Pin| SPI_CS_Pin;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(SPI_GPIO, &GPIO_InitStructure);
+	
+	GPIO_InitStructure.GPIO_Pin = SPI_MISO_Pin;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(SPI_GPIO, &GPIO_InitStructure);
+}
+```
+Đây là cấu hình cho Master nên sẽ có ba chân ngõ ra là SCK, MOSI và CS. Còn lại chân ngõ vào do Slave điều khiển là MISO.
+
+```cpp
+void Clock(){
+	GPIO_WriteBit(SPI_GPIO, SPI_SCK_Pin, Bit_SET);
+	delay_ms(4);
+	GPIO_WriteBit(SPI_GPIO, SPI_SCK_Pin, Bit_RESET);
+	delay_ms(4);
+}
+```
+Mô phỏng xung Clock bằng cách đặt chân SCK lên một khoảng thời gian 4ms sau đó đặt lại mức thấp
+
+```cpp
+void SPISetup(void){
+	GPIO_WriteBit(SPI_GPIO, SPI_SCK_Pin,  Bit_RESET);
+	GPIO_WriteBit(SPI_GPIO, SPI_CS_Pin,   Bit_SET);
+	GPIO_WriteBit(SPI_GPIO, SPI_MOSI_Pin, Bit_RESET);//Muc gi cung duoc
+}
+```
+Khởi tạo giá trị đầu cho các chân SPI, SCK chưa có xung nên sẽ là bit 0 (CPOL = 0) và CS ở mức 1 (chưa chọn Slave). Chân MOSI mức gì cũng được và chân MISO master không thể điều khiển.
+
+#### 3. Hàm truyền dữ liệu ở Master
+```cpp
+void SPI_Master_Transmit(uint8_t u8Data){
+	uint8_t u8Mask = 0x80;					
+	uint8_t tempData; 
+	GPIO_WriteBit(SPI_GPIO, SPI_CS_Pin, Bit_RESET); 
+	delay_ms(1);
+	for(int i=0; i<8; i++){
+		tempData = u8Data & u8Mask; 
+		if(tempData){
+			GPIO_WriteBit(SPI_GPIO, SPI_MOSI_Pin, Bit_SET);
+			delay_ms(1);
+		} else{
+			GPIO_WriteBit(SPI_GPIO, SPI_MOSI_Pin, Bit_RESET);
+			delay_ms(1);
+		}
+		u8Data=u8Data<<1; 
+		Clock();
+	}
+	GPIO_WriteBit(SPI_GPIO, SPI_CS_Pin, Bit_SET);
+	delay_ms(1);
+}
+```
+- Tạo một mặt nạ có giá trị 0b10000000 và tạo một biến đệm để xử lý bit
+- Đầu tiên sẽ phải kéo chân CS của Slave muốn giao tiếp xuống 0 và đợi 1ms để đảm Slave nhận được tin hiệu.
+- Sau đó gửi 8 bit bằng cách dịch từng bit của ```u8Data``` và phép and với ```u8Mask``` để tìm ra bit đang truyền là bit 0 hay 1 và gán vào ```tempData```
+- Cuối cùng là kiểm tra giá trị của ```tempData``` để đặt chân MOSI là cao hay thấp, tương ứng với bit 1 và 0.
+
+```cpp
+uint8_t DataTrans[] = {1,7,12,17,89};//Du lieu duoc truyen di
+int main(){
+    RCC_config();
+    TIMER_config();
+    GPIO_Config();
+    SPISetup();
+    while(1){	
+			for(int i=0; i<5; i++){
+				SPI_Master_Transmit(DataTrans[i]);
+				delay_ms(1000);
+			}
+		}
+}
+```
+Tại hàm main() sẽ gọi lại các hàm cấu hình GPIO và Timer. Sau đó tạo một hàm ```while(1)``` để gửi tuần tự các giá trị của mảng ```DataTrans```
+
+**Tương tự với Master, Slave cũng sẽ cấu hình những thông số trên, chỉ khác là Slave sẽ có ba chân ngõ vào CS, MOSI, SCK và một chân ngõ ra MISO**
+```cpp
+void GPIO_Config(void){
+	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitStructure.GPIO_Pin =  SPI_MISO_Pin;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(SPI_GPIO, &GPIO_InitStructure);
+	
+	GPIO_InitStructure.GPIO_Pin = SPI_MOSI_Pin|SPI_SCK_Pin| SPI_CS_Pin;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(SPI_GPIO, &GPIO_InitStructure);
+}
+```
+4. Hàm nhận dữ liệu ở Slave
+```cpp
+uint8_t SPI_Slave_Receive(void){
+	uint8_t dataReceive =0x00;   
+	uint8_t temp = 0x00, i=0;
+	while(GPIO_ReadInputDataBit(SPI_GPIO, SPI_CS_Pin));
+	while(!GPIO_ReadInputDataBit(SPI_GPIO, SPI_SCK_Pin));
+	for(i=0; i<8;i++){ 
+		if(GPIO_ReadInputDataBit(SPI_GPIO, SPI_SCK_Pin)){
+			while(GPIO_ReadInputDataBit(SPI_GPIO, SPI_SCK_Pin))
+				temp = GPIO_ReadInputDataBit(SPI_GPIO, SPI_MOSI_Pin);
+			
+			dataReceive=dataReceive<<1;
+			dataReceive=dataReceive|temp;
+    }
+		while(!GPIO_ReadInputDataBit(SPI_GPIO, SPI_SCK_Pin));
+	}
+	return dataReceive;
+}
+```
+Giá trị nhận được ở Slave cũng là 8 bit.
+- Đầu tiên tạo một biến để nhận dữ liệu ```dataReceive``` và một biến đệm ```temp```.
+- Chờ cho đến khi chân CS được kéo xuống 0
+- Chờ đến khi có xung Clock (Có dữ liệu được truyền).
+- Dữ liệu nhận được sẽ gán vào biến ```temp``` và dịch vào ```dataReceive```
+
+```cpp
+uint8_t Num_Receive;
+int main(){
+    RCC_config();
+    TIMER_config();
+		GPIO_Config();
+		SPISetup();
+    TIM_SetCounter(TIM2,0); //Set up gia tri trong thanh ghi dem
+    while(1){	
+			if(!(GPIO_ReadInputDataBit(SPI_GPIO, SPI_CS_Pin))){
+				for(int i=0; i<5; i++){
+					Num_Receive = SPI_Slave_Receive();
+				}
+			}
+		}
+}
+```
+Tại hàm main sẽ liên tục kiểm tra chân CS và nhận 5 bit dữ liệu từ Master.
+
+### SPI Hardware
+
+Sử dụng các chân SPI đã được tích hợp sẵn trên phần cứng để truyền nhận dữ liệu
+Ba bước thực hiện:
+- Xác định các chân GPIO của SPI: Bài này ta sử dụng SPI1
+    - PA4: CS
+    - PA5: SCK
+    - PA6: MISO
+    - PA7: MOSI
+- Cấu hình GPIO cho SPI
+- Cấu hình SPI
+
+#### 1. Xác định chân SPI
+```cpp
+#define SPI1_NSS 	GPIO_Pin_4
+#define SPI1_SCK	GPIO_Pin_5
+#define SPI1_MISO   GPIO_Pin_6
+#define SPI1_MOSI   GPIO_Pin_7
+#define SPI1_GPIO   GPIOA
+
+void RCC_config(void){
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1 | RCC_APB2Periph_GPIOA, ENABLE);
+}
+```
+Ta sẽ sử dụng SPI với thứ tự chân giống như lý thuyết. Thêm vào đó ta sẽ cấp trực tiếp đến ngoại vi SPI1 thông qua thanh ghi ABP2.
+
+#### 2. Cấu hình chân GPIO cho SPI
+```cpp
+void GPIO_Config(void){
+	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitStructure.GPIO_Pin = SPI1_NSS| SPI1_SCK| SPI1_MISO| SPI1_MOSI;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; 
+	GPIO_Init(SPI1_GPIO, &GPIO_InitStructure);
+
+}
+```
+Cấu hình các chân SPI theo kiểu AF_PP: Các chân này sẽ hoạt động với một chức năng thay thế như I2C, SPI, UART...
+
+#### 3. Cấu hình SPI
+```cpp
+void SPI_config(void){
+	SPI_InitTypeDef SPI_InitStruct;
+	
+	SPI_InitStruct.SPI_Mode = SPI_Mode_Master; 
+	SPI_InitStruct.SPI_Direction = SPI_Direction_2Lines_FullDuplex; 
+	SPI_InitStruct.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_32; 
+	SPI_InitStruct.SPI_CPOL = SPI_CPOL_Low; 
+	SPI_InitStruct.SPI_CPHA = SPI_CPHA_1Edge;
+	SPI_InitStruct.SPI_DataSize = SPI_DataSize_8b;/
+	SPI_InitStruct.SPI_FirstBit = SPI_FirstBit_LSB; 
+	SPI_InitStruct.SPI_CRCPolynomial = 7 ;
+	SPI_InitStruct.SPI_NSS = SPI_NSS_Soft; 
+
+	SPI_Init(SPI1, &SPI_InitStruct);
+	SPI_Cmd(SPI1,ENABLE);
+		
+}
+```
+Đầu tiên, giống với Timer khi sử dụng phải tạo một đối tượng Struct để cấu hình các thông số ```SPI_InitTypeDef SPI_InitStruct;```
+- SPI Mode: Xác định thiết bị đang cấu hình là Master hay Slave
+- SPI_Direction: Cấu hình kiểu truyền là song công, đơn công hay bán song công
+- SPI_BaudRatePrescaler: Bộ chia tần số cho SPI, mặc định 72Mhz
+- SPI_CPOL và SPI_CPHA đã được giải thích từ bài 3 và có chức năng cấu hình chế độ truyền của SPI
+- SPI_DataSize: Quy định số bit truyền mỗi lần 8 bit hay 16 bit
+- SPI_FirstBit: Quy định truyền bit trong số cao trước(LSB) hay bit thấp trước(MSB)
+- SPI_CRCPolynomial: Cấu hình CheckSum. Nếu 8 bit thì đặt 7, nếu 16 bit thì đặt là 15
+- SPI_NSS: Cấu hình chân CS được quản lý bởi Software(1 biến) hay Hardware(1 pin).
+Sau đó gọi hàm Init để cấu hình SPI1 và hàm Cmd để cho phép SPI1 hoạt động
+
+Hai hàm truyền nhận dữ liệu 8/16bits:
+- Hàm ```SPI_I2S_SendData(SPI_TypeDef* SPIx, uint16_t Data)```, tùy vào cấu hình datasize là 8 hay 16 bit sẽ truyền đi 8 hoặc 16 bit dữ liệu. Hàm nhận 2 tham số là bộ SPI sử dụng và data cần truyền.
+- Hàm ```SPI_I2S_ReceiveData(SPI_TypeDef* SPIx)``` trả về giá trị đọc được trên SPIx. Hàm trả về 8 hoặc 16 bit data.
+
+Hàm đọc trạng thái cờ: ```SPI_I2S_GetFlagStatus(SPI_TypeDef* SPIx, uint16_t SPI_I2S_FLAG)``` trả về giá trị 1 cờ trong thanh ghi của SPI. Các cờ thường được dùng:
+- ```SPI_I2S_FLAG_TXE```: Cờ báo truyền, cờ này sẽ set lên 1 khi truyền xong data trong buffer.
+- ```SPI_I2S_FLAG_RXNE```: Cờ báo nhận, cờ này set lên 1 khi nhận xong data.
+- ```SPI_I2S_FLAG_BSY```: Cờ báo bận,set lên 1 khi SPI đang bận truyền nhận.
+
+#### 3. Hàm gửi 1 byte đến Slave
+```cpp
+uint8_t SPI_Send1Byte(uint8_t data){
+	uint8_t received_data;
+	GPIO_WriteBit(SPI1_GPIO, SPI1_NSS, Bit_RESET); 
+ 
+	SPI_I2S_SendData(SPI1, data);
+	while(SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE)==0); 
+	
+	while(SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET); 
+   received_data = SPI_I2S_ReceiveData(SPI1);
+	
+	GPIO_WriteBit(SPI1_GPIO, SPI1_NSS, Bit_SET); 
+	return received_data; 
+}
+```
+- Đầu tiên trước khi truyền phải kéo chân CS của Slave xuống mức thấp, sau đó gọi hàm ```SPI_I2S_SendData(SPI1, data);```, có hai tham số là bộ SPI và dữ liệu truyền đi để truyền đi 8 bit ```data```
+- Sau đó chờ đến khi cờ TXE được kéo lên 1 (truyền xong).
+- Theo lý thuyết, Slave cũng sẽ gửi lại data cho Master nên ta sẽ chờ cờ RXNE được kéo lên 1 (nhận xong) và đọc dữ liệu được nhận trong thanh ghi DR của SPI1 bằng hàm ```SPI_I2S_ReceiveData(SPI1);```
+- Sau khi đã hoàn thành, đặt lại chân CS lên 1 để bỏ chọn Slave.
+
+**Đối với Slave các thông số cấu hình giống Master nhưng khác ở** ```SPI_Mode = SPI_Mode_Slave```
+#### 4. Hàm nhận dữ liệu từ Master
+```cpp
+uint8_t SPI_Receive1Byte(uint8_t data_to_send_back){
+    uint8_t temp;
+    while(SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY)==1);//Co bao nhan SPI_I2S_FLAG_BSY = 1 khi SPI dang ban, Cho` den khi SPI ranh?
+    temp = (uint8_t)SPI_I2S_ReceiveData(SPI1); // Tra ve gia tri doc duoc tren SPI1
+    while(SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE)==0); //cho` den khi nhan xong data SPI_I2S_FLAG_RXNE = 1
+    
+		SPI_I2S_SendData(SPI1, data_to_send_back); // G?i d? li?u tr? l?i
+    while(SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET);
+	return temp;
+}
+```
+```cpp
+uint8_t Num_Receive;
+uint8_t k[5] = {12, 13, 14, 15, 16};
+int main(){
+    RCC_config();
+		GPIO_Config();
+		SPI_config();
+    while(1){   
+			while(GPIO_ReadInputDataBit(SPI1_GPIO, SPI1_NSS));
+       if(GPIO_ReadInputDataBit(SPI1_GPIO, SPI1_NSS)==0){
+          for(int i = 0; i<5; i++){
+            Num_Receive = SPI_Receive1Byte(k[i]);
+          }
+       }
+		}
+
+}
+```
+- Đọc chân NSS và chờ đến khi chân được kéo xuống 0
+- Sau đó, chờ đến khi SPI1 rảnh bằng cách đọc cờ SPI_I2S_FLAG_BSY. Bằng 0 thì rảnh
+- Tiếp theo đó, đọc dữ liệu nhận được từ Master thông qua hàm ```SPI_I2S_ReceiveData(SPI1);```
+- Đọc cờ RXNE cho đến khi nhận xong. Sau đó gửi lại dữ liệu đến Master bằng hàm ```SPI_I2S_SendData(SPI1, data_to_send_back);``` . Không thể gửi nhận song song vì SPI là kiểu truyền dữ liệu bán song công
+- Sau đó chờ đến khi gửi xong TXE == 1 thì kết thúc hàm.
+
+</details>
 
 
 
