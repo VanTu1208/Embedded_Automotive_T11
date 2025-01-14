@@ -366,7 +366,7 @@ Kết hợp các trường hợp trên ta được bảng sau:
 </details>
 
 
-## Bài 4: SPI Software & SPI Hardware
+## Bài 5: SPI Software & SPI Hardware
 
 <details><summary>Xem</summary>  
 
