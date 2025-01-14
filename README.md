@@ -309,7 +309,8 @@ Kết hợp các trường hợp trên ta được bảng sau:
 - Hoạt động ở cơ chế Master Slave, sử dụng địa chỉ riêng để phân biệt Slave
 - Sử dụng hai dây SDA và SCL để giao tiếp
 - Cần có điện trở nối hai dây nối lên nguồn để tạo mức điện áp 3.3/5V khi chưa có dữ liệu vì hai dây thả nổi nên MCU không hiểu được mức điện áp.
-
+- 1 Master tối đa kết nối được 127 Slave
+  
 #### Chức năng các dây:
 - SDA: Dây truyền dữ liệu truyền nhận.
 - SCL: Dây đồng bộ truyền nhận dữ liệu do Master điều khiển tạo xung Clock.
@@ -674,7 +675,7 @@ int main(){
 - Đọc chân NSS và chờ đến khi chân được kéo xuống 0
 - Sau đó, chờ đến khi SPI1 rảnh bằng cách đọc cờ SPI_I2S_FLAG_BSY. Bằng 0 thì rảnh
 - Tiếp theo đó, đọc dữ liệu nhận được từ Master thông qua hàm ```SPI_I2S_ReceiveData(SPI1);```
-- Đọc cờ RXNE cho đến khi nhận xong. Sau đó gửi lại dữ liệu đến Master bằng hàm ```SPI_I2S_SendData(SPI1, data_to_send_back);``` . Không thể gửi nhận song song vì SPI là kiểu truyền dữ liệu bán song công
+- Đọc cờ RXNE cho đến khi nhận xong. Sau đó gửi lại dữ liệu đến Master bằng hàm ```SPI_I2S_SendData(SPI1, data_to_send_back);```
 - Sau đó chờ đến khi gửi xong TXE == 1 thì kết thúc hàm.
 
 </details>
