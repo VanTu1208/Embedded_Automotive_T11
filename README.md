@@ -963,7 +963,7 @@ void Send_I2C_Data(uint8_t data)
 }
 
 ```
-Hàm gửi 8 bit dữ liệu:
+Hàm gửi 8 bit dữ liệu
 - Gửi data qua I2C1 và chờ đến khi hoàn tất truyền
 ```cpp
 uint8_t Read_I2C_Data(){
@@ -974,7 +974,7 @@ uint8_t Read_I2C_Data(){
 }
 
 ```
-Hàm nhận 8 bit dữ liệu:
+Hàm nhận 8 bit dữ liệu
 
 Sử dụng các hàm trên theo các câu trúc khác nhau để giao tiếp với slave
 
