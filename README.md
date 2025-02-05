@@ -982,9 +982,658 @@ Sử dụng các hàm trên theo các câu trúc khác nhau để giao ti
 
 
 
+## Bài 7: UART Software - UART Hardware
+<details><summary>Xem</summary>  
+
+### UART Software
+Sử dụng các GPIO để mô phỏng quá trình truyền nhận của UART
+
+Có hai bước để thực hiện:
+- Xác định các chân UART
+- Cấu hình GPIO
+```cpp
+#define TX_Pin GPIO_Pin_0
+#define RX_Pin GPIO_Pin_1
+#define UART_GPIO GPIOA
+#define time_duration 104
+
+void RCC_Config(){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+}
+```
+Chúng ta sẽ sử dụng A0 làm TX và A1 làm RX và cấp xung cho chúng.
+```cpp
+void delay_us(uint16_t timedelay){
+    TIM_SetCounter(TIM2, 0);
+    while(TIM_GetCounter(TIM2)<timedelay){}
+}
+
+void delay_s(uint32_t timedelay){
+    TIM_SetCounter(TIM2, 0);
+			for(int i = 0; i < timedelay*1000000; i++){
+				delay_us(1);
+			}
+}
+```
+Tạo hai hàm delay sử dụng Tỉmer2 đã được đề cập từ bài trước.
+
+```
+void clock(){
+	delay_us(time_duration);
+}
+```
+Một hàm tạo delay, là khoảng thời gian giữa hai lần truyền dữ liệu để hai bên đồng bộ.
+
+```time_duration``` là khoảng thời gian delay khi chọn Baudrate = 9600.
+- BaudRate = 9600
+- Tức truyền được 9600bits/s = 9600bits/1000ms
+- Nghĩa là 1 bit truyền đi mất khoảng 0.10467ms
+- Vì thế ```time_duration = 104``` để xấp xỉ.
+
+```cpp
+void GPIO_Config(){
+	GPIO_InitTypeDef GPIOInitStruct;
+	GPIOInitStruct.GPIO_Pin = RX_Pin;
+	GPIOInitStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	GPIO_Init(GPIOA, &GPIOInitStruct);
+	//
+	GPIOInitStruct.GPIO_Pin = TX_Pin;
+	GPIOInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIOInitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_Init(GPIOA, &GPIOInitStruct);
+}
+```
+Ta sẽ cấu hình RX kiểu Input Floating để làm ngõ vào và TX Output Push-Pull để tạo ngõ ra.
+
+```cpp
+void UART_Config(){
+	GPIO_SetBits(UART_GPIO, TX_Pin);
+	delay_us(1);
+}
+```
+Và khi chưa truyền dữ liệu thì cả hai chân được nối mức cao.
+
+**Hàm mô phỏng gửi dữ liệu kí tự**
+```cpp
+void UARTSoftware_Transmit(char c) {
+    // Start bit
+    GPIO_ResetBits(GPIOA, TX_Pin); // Tao dieu kien bat dau
+    clock();
+
+    // Truyen các bit du lieu (LSB truoc)
+    for (int i = 0; i < 8; i++) {
+        if (c & (1 << i)) {
+            GPIO_SetBits(GPIOA, TX_Pin);
+        } else {
+            GPIO_ResetBits(GPIOA, TX_Pin);
+        }
+        clock();
+    }
+
+    // Stop bit
+    GPIO_SetBits(GPIOA, TX_Pin);
+    clock();
+}
+```
+
+- Trước khi gửi, phải kéo chân TX xuống mức và delay một chu kỳ để bắt đầu tín hiệu Start
+- Sau đó sẽ truyền lần lượt 8 bits dữ liệu bằng cách dịch và set chân TX theo giá trị vừa tìm và delay trong một khoảng chu kỳ
+- Sau khi truyền xong 8 bits dữ liệu sẽ truyền bits Stop tức kéo chân TX lên mức 1 để kết thúc truyền nhận (với trường hợp không dùng Parity).
+
+**Hàm mô phỏng nhận ký tự**
+```cpp
+char UARTSoftware_Receive() {
+    char c = 0;
+		// Start bit
+		while (GPIO_ReadInputDataBit(GPIOA, RX_Pin) == 1);
+
+		delay_us(time_duration + time_duration / 2);
+
+		for (int i = 0; i < 8; i++) {
+				if (GPIO_ReadInputDataBit(GPIOA, RX_Pin)) {
+						c |= (1 << i);
+				}
+				clock(); 
+		}
+
+		// Đợi Stop bit
+		delay_us(time_duration / 2);
+		
+		return c;
+}
+```
+
+- Tại bên nhận sẽ chờ cho đến khi nhận được tín hiệu Start
+- Sau đó sẽ delay 1.5 chu kỳ để khi đọc dữ liệu, sẽ đọc tại vị trí giữa của một bit, nơi tín hiệu đã ổn định
+- Lần lượt nhận 8 bits dữ liệu tại chân RX và dịch vào ```c```
+- Delay nửa chu kỳ cuối để đợi Stop bit và trả về ký tự ```c``` là dữ liệu nhận được
+
+```cpp
+char data[9] = {'V', 'A', 'N', 'T', 'U', 'H', 'A', 'L', 'A'};
+int main(){
+	RCC_Config();
+	GPIO_Config();
+	TIMER_config();
+	UART_Config();
+	for (int i = 0; i<9; i++){
+			UARTSoftware_Transmit(data[i]);
+		delay_s(1);
+	}
+		UARTSoftware_Transmit('\n');
+		
+	while(1){
+		UARTSoftware_Transmit(UARTSoftware_Receive());
+	}	
+}
+```
+Hàm test sẽ lần lượt gửi 9 ký tự qua UART và sau đó sẽ chờ để nhận dữ liệu nhận về của UART.
+
+
+### UART Hardware
+Sử dụng UART được tích hợp trên phần cứng của vi điều khiển.
+
+Các bước thực hiện
+- Xác định các chân GPIO của UART
+- Cấu hình GPIO
+- Cấu hình UART
+
+Ở bài này chúng ta sẽ sử dụng **USART1** có hai chân **PA9 - TX** và **PA10 - RX**
+
+Để sử dụng UART, ta phải thêm thư viện ``` "stm32f10x_usart.h"```
+
+**Cấu hình GPIO**
+```cpp
+void RCC_Config(void){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1 | RCC_APB2Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+}
+
+void GPIO_Config(void){
+	GPIO_InitTypeDef GPIOInitStruct;
+	
+	GPIOInitStruct.GPIO_Pin = GPIO_Pin_10; //Chan RX
+	GPIOInitStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;// Neu 2 chan de AF thi bi ngan mach
+	GPIO_Init(GPIOA, &GPIOInitStruct);
+	
+	GPIOInitStruct.GPIO_Pin = GPIO_Pin_9; //Chan TX
+	GPIOInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIOInitStruct.GPIO_Mode = GPIO_Mode_AF_PP;
+	GPIO_Init(GPIOA, &GPIOInitStruct);
+}
+```
+Đầu tiên phải cấp xung GPIOA để sử dụng các chân và cấp thêm cho bộ USART1.
+
+Chân RX được cấu hình ```GPIO_Mode_IN_FLOATING``` và ngõ ra TX được cấu hình ```GPIO_Mode_AF_PP```. Không cấu hình RX là AF_PP vì sẽ bị ngắn mạch hai chân RX và TX.
+
+**Cấu hình UART**
+```cpp
+void UART_Config(void){
+	USART_InitTypeDef UARTInitStruct;
+	UARTInitStruct.USART_Mode = USART_Mode_Tx | USART_Mode_Rx; //Cau hinh che do: ca truyen va nhan (song cong)
+	UARTInitStruct.USART_BaudRate = 115200; //Cau hinh toc do bit
+	UARTInitStruct.USART_HardwareFlowControl = USART_HardwareFlowControl_None; //Cau hinh kiem soat luong truyen du lieu tranh viec tran bo dem
+	UARTInitStruct.USART_WordLength = USART_WordLength_8b; //Truyen du lieu 8 hoac 9 bit
+	UARTInitStruct.USART_Parity = USART_Parity_No;
+	UARTInitStruct.USART_StopBits = USART_StopBits_1;
+	
+	USART_Init(USART1, &UARTInitStruct);
+	
+	USART_Cmd(USART1, ENABLE);
+	
+}
+```
+- ```USART_Mode```: Cấu hình Mode của vi điều khiển là nhận hay gửi hoặc cả hai khi sử dụng phép OR.
+
+- ```USART_BaudRate```: Cấu hình BaudRate để đồng bộ truyền nhận dữ liệu giữa hai vi điều khiển. Phổ biến nhất là 9600 và 115200.
+
+- ```USART_HardwareFlowControl```: Dùng để bật chế độ kiểm soát luồng truyền để tránh việc tràn bộ đệm. 
+    Có các giá trị sauL
+    ```
+    USART_HardwareFlowControl_None       
+    USART_HardwareFlowControl_RTS    // Request to Send   
+    USART_HardwareFlowControl_CTS    // Clear to Send
+    USART_HardwareFlowControl_RTS_CTS
+    ```
+
+    RTS (Request To Send - Yêu cầu gửi)
+
+    - Được điều khiển bởi thiết bị gửi dữ liệu.
+    - Khi thiết bị gửi dữ liệu sẵn sàng để truyền, nó kéo RTS xuống mức thấp (Active Low).
+    - Khi bộ đệm của thiết bị nhận đầy, nó kéo RTS lên mức cao, báo cho thiết bị gửi tạm dừng truyền dữ liệu.
+
+    CTS (Clear To Send - Cho phép gửi)
+
+    - Được điều khiển bởi thiết bị nhận dữ liệu.
+    - Khi bộ đệm của thiết bị nhận còn trống, nó kéo CTS xuống mức thấp, cho phép thiết bị gửi tiếp tục truyền dữ liệu.
+    - Nếu bộ đệm đầy, thiết bị nhận kéo CTS lên mức cao, yêu cầu dừng gửi dữ liệu.
+    Thiết bị A muốn gửi dữ liệu:
+    -   Kiểm tra CTS từ thiết bị B:
+    - Nếu CTS = LOW, thiết bị A có thể gửi dữ liệu.
+    - Nếu CTS = HIGH, thiết bị A tạm dừng gửi để tránh tràn bộ đệm.
+    Thiết bị B nhận dữ liệu:
+    - Khi bộ đệm gần đầy, RTS = HIGH, báo hiệu thiết bị A tạm dừng truyền dữ liệu.
+    - Khi bộ đệm có không gian trống, RTS = LOW, cho phép tiếp tục truyền.
+
+- ```USART_WordLength```: Khai báo dữ liệu truyền là 8 bits hoặc 9 bits
+- ```USART_StopBits```: Cấu hình số lượng Stopbit
+    ```
+    USART_StopBits_1
+    USART_StopBits_0_5 
+    USART_StopBits_2    
+    USART_StopBits_1_5    
+    ```
+- ```USART_Parity```: Cấu hình sử dụng Parity, có hai loại là chẵn hoặc lẽ, có thể không cần sử dụng
+    ```
+    #define USART_Parity_No
+    #define USART_Parity_Even
+    #define USART_Parity_Odd 
+    ```
+
+**Một số hàm được thiết lập sẵn trong UART**
+- Hàm ```USART_SendData(USART_TypeDef* USARTx, uint16_t Data)``` truyền data từ UARTx. Data này đã được thêm bit chẵn/lẻ tùy cấu hình.
+- Hàm ```USART_ReceiveData(USART_TypeDef* USARTx)``` nhận data từ UARTx.
+- Hàm ```USART_GetFlagStatus(USART_TypeDef* USARTx, uint16_t USART_FLAG)``` trả về trạng thái cờ USART_FLAG tương ứng:
+    ```
+    USART_FLAG_TXE: Cờ truyền, set lên 1 nếu quá trình truyền hoàn tất.
+    USART_FLAG_RXNE: Cờ nhận, set lên 1 nếu quá trình nhận hoàn tất.
+    USART_FLAG_IDLE: Cờ báo đường truyền đang ở chế độ Idle.
+    USART_FLAG_PE: Cờ báo lỗi Parity.
+    ```
+
+
+**Hàm gửi một ký tự**
+```cpp
+void UART_SendChar(USART_TypeDef *USARTx, char data){
+	
+	while(USART_GetFlagStatus(USARTx, USART_FLAG_TXE)==RESET); // Cho khi thanh ghi DR trong de chen du lieu moi de gui
+	
+	USART_SendData(USARTx, data);
+	
+	while(USART_GetFlagStatus(USARTx, USART_FLAG_TC)==RESET);//Cho den khi truyen thanh cong
+	
+	
+}
+```
+- Đợi đến khi thanh ghi DR trống đến thêm dữ liệu mới và gửi
+- Gửi dữ liệu bằng hàm ```USART_SendData(USARTx, data);```
+
+- Sau đó chờ đến khi truyền thành công
+
+**Hàm nhận một ký tự**
+```cpp
+char UART_ReceiveChar(USART_TypeDef *USARTx){
+	char tmp = 0x00;
+	
+	while(USART_GetFlagStatus(USARTx, USART_FLAG_RXNE)==RESET);
+	
+	tmp = USART_ReceiveData(USARTx);
+	
+	return tmp;
+}
+```
+- Chờ đến khi nhận hoạt tất
+- Nhận Data từ UARTx gán vào tmp.
+
+
+**Test**
+```cpp
+uint8_t DataTrans[] = {'V','A','N','T','U'};//Du lieu duoc truyen di
+int main() {
+	RCC_Config();
+	GPIO_Config();
+	UART_Config();
+	TIMER_config();	
+	for(int i = 0; i<5; ++i){
+			delay_ms(1998);
+			UART_SendChar(USART1, DataTrans[i]);
+			delay_ms(2);
+		}
+	UART_SendChar(USART1, '\n');
+
+	while(1){
+		UART_SendChar(USART1,UART_ReceiveChar(USART1));
+	}
+}
+```
+Sử dụng main() để test bằng cách gửi 5 bytes dữ liệu qua USART1 và sau đó chờ để nhận dữ liệu về.
 
 
 
+
+</details>
+
+
+## Bài 8: Interrupt
+<details><summary>Xem</summary>  
+
+### Ngắt ngoài
+
+Các bước thực hiện
+- Xác định chân Ngắt
+- Cấu hình GPIO
+
+Để sử dụng được ngắt ngoài, ngoài bật clock cho GPIO tương ứng cần bật thêm clock cho AFIO.
+```cpp
+void RCC_Config(){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+}
+```
+Cấu hình ngõ vào Ngắt
+```cpp
+void GPIO_Config(void){
+	GPIO_InitTypeDef GPIOInitStruct;
+	//Cau hinh cho chan interrupt PA0
+	GPIOInitStruct.GPIO_Mode = GPIO_Mode_IPU; //Input Pull_up
+	GPIOInitStruct.GPIO_Pin = GPIO_Pin_0;
+	GPIOInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	
+	GPIO_Init(GPIOA, &GPIOInitStruct);
+}
+```
+Ta sẽ cấu hình chân ngắt là Input và có thể cấu hình thêm trở kéo lên/xuống tùy theo cạnh ngắt được sử dụng.
+
+**Cấu trúc**
+![Cấu trúc external interrupt](https://i.imgur.com/efZpWTc.png)
+
+Vi điều khiển sẽ có 16 Line ngắt từ 0-15, mỗi Line sẽ tương ứng với một nhóm các chân GPIO. Ví dụ Line0 sẽ nhận tín hiệu ngắt từ PA0, PB0,...
+
+Để sử dụng chân GPIO nào để làm ngắt cho Line thì phải nối Line với chân đó.   
+**Hạn chế sử dụng hai GPIO trên cùng một Line ngắt vì khi có ngắt sẽ không biết GPIO nào tạo ngắt**.
+
+**Cấu hình ngắt**
+```cpp
+void EXTI_Config(void) {
+	GPIO_EXTILineConfig(GPIO_PortSourceGPIOA,GPIO_PinSource0); //PA0
+	
+	EXTI_InitTypeDef EXTIInitStruct;
+	
+	EXTIInitStruct.EXTI_Line = EXTI_Line0;//Xac dinh duong ngat (EXTIn) co 18 line va 15 line duoc cau hinh san, 3line mo rong 
+	EXTIInitStruct.EXTI_Mode = EXTI_Mode_Interrupt; //Thuc thi ham ngat khi xay ra ngat ---- Even thi khong thuc thi ham ngat
+	EXTIInitStruct.EXTI_Trigger = EXTI_Trigger_Falling;//chon canh kich hoat ngat
+	EXTIInitStruct.EXTI_LineCmd = ENABLE;
+	
+	EXTI_Init(&EXTIInitStruct);
+}
+```
+- Hàm ```GPIO_EXTILineConfig(uint8_t GPIO_PortSource, uint8_t GPIO_PinSource)``` cấu hình chân ở chế độ sử dụng ngắt ngoài:
+    ```GPIO_PortSource```: Chọn Port để sử dụng làm nguồn cho ngắt ngoài.  
+    ```GPIO_PinSource```: Chọn Pin để cấu hình.
+
+Tương tự với các ngoại vi khác, External Interrupt cũng sẽ có một Struct ```Struct EXTI_InitTypeDef``` giữ các thuộc tính của ngắt.
+- ```EXTI_Line```: Cấu hình Line ngắt, EXTI_Line0-15
+- ```EXTI_Mode```: Chế độ hoạt động cho ngắt ngoài. Có hai chế độ:
+    - ```EXTI_Mode_Interrupt```: Khi ngắt xảy ra sẽ tạo ra ngắt và chạy hàm thực thi.
+    - ```EXTI_Mode_Event```: Khi có ngắt chỉ báo cho CPU biết chứ không thực thi hàm phục vụ ngắt.
+- ```EXTI_Trigger```: Xác định khi nào xảy ra Ngắt
+    - ```EXTI_Trigger_Rising```: Ngắt cạnh lên
+    - ```EXTI_Trigger_Falling```: Ngắt cạnh xuống
+    - ```EXTI_Trigger_Rising_Falling```: Cả hai
+- ```EXTI_LineCmd```: Cho phép ngắt ở Line đã cấu hình.
+- ```EXTI_Init(&EXTIInitStruct)```: Lưu cài đặt vào thanh ghi.
+
+**Cấu hình bộ quản lý ngắt**
+
+NVIC (Nested Vectored Interrupt Controller) chịu trách nhiệm quản lý và xử lý các ngắt, NVIC cho phép MCU xử lý nhiều ngắt từ nhiều nguồn khác nhau, có ưu tiên ngắt và hổ trợ ngắt lồng nhau. Số ưu tiên càng nhỏ thì độ ưu tiên càng lớn.
+
+- Priority Group xác định cách phân chia bit giữa Preemption Priority và SubPriority bằng cách sử dụng hàm ```NVIC_PriorityGroupConfig(uint32_t PriorityGroup)```. Trong đó:
+    - Preemption Priority xác định mức độ ưu tiên chính của ngắt và quy định ngắt nào có thể được lồng vào.
+    - SubPriority: khi các ngắt có cùng mức Preemption Preemption, thì sẽ xem xét tới SubPriority.
+
+![PriorityGrouip](https://i.imgur.com/mxtLW1k.png)
+
+Sẽ có **4 bits** dùng để quan lý hai loại ưu tiên trên và hàm ```NVIC_PriorityGroupConfig``` sẽ chia 4 bits này ra để cấu hình.  
+Ví dụ khi cấu hình là ```NVIC_PriorityGroup_1``` Thì một bit sẽ được sử dụng cho Preemption Priority và 3 bits sẽ dùng cho SubPriority.
+
+Bộ NVIC cấu hình các tham số ngắt và quản lý các vecto ngắt. Các tham số được cấu hình trong ```NVIC_InitTypeDef```, bao gồm:
+- ```NVIC_IRQChannel```: Xác định vector ngắt của kênh ngắt cần được cấu hình. Với vector ngắt là địa chỉ của hàm phục vụ ngắt tương ứng.
+    - Các Line0 đến Line4 sẽ được phân vào các vector ngắt riêng tương ứng EXTI0 -> EXTI4, 
+    - Line5->Line9 được phân vào vector ngắt EXTI9_5,
+    - Line10->Line15 được phân vào vecotr EXTI15_10.
+
+
+
+- ```NVIC_IRQChannelPreemptionPriority```: Cấu hình độ ưu tiên của ngắt.
+- ```NVIC_IRQChannelSubPriority```: Cấu hình độ ưu tiên phụ.
+- ```NVIC_IRQChannelCmd```: Cho phép ngắt.
+
+```cpp
+void NVIC_Config(void){
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);//Cau hinh so bit cua Preemption Priority vaf Sub Prioriry
+	
+	NVIC_InitTypeDef NVICInitStruct;
+
+	NVICInitStruct.NVIC_IRQChannel = EXTI0_IRQn; //Dang cau hinh ngat Line0 nen chon vector ngat EXTI0_IRQn
+	NVICInitStruct.NVIC_IRQChannelPreemptionPriority = 1; //mamg gia tri tu 0-3 vi cai dat 2bit cho Preemption Priority
+	NVICInitStruct.NVIC_IRQChannelSubPriority = 1;	//mamg gia tri tu 0-3 vi cai dat 2bit cho Sub Priority
+	NVICInitStruct.NVIC_IRQChannelCmd = ENABLE;
+	
+	NVIC_Init(&NVICInitStruct);
+}
+```
+
+**Hàm phục vụ ngắt ngoài**
+
+Trong hàm phục vụ ngắt ngoài, chúng ta sẽ thực hiện:
+- Kiểm tra ngắt đến từ line nào, có đúng là line cần thực thi hay không?
+- Thực hiện các lệnh, các hàm.
+- Xóa cờ ngắt ở line.
+
+Ngắt trên từng line có hàm phục riêng của từng line. Có tên cố định: EXTIx_IRQHandler() (x là line ngắt tương ứng). Và hàm này đã được định nghĩa sẵn trên hệ thống ở dạng WEAK tức là có thể ghi đè được.  
+```cpp
+EXPORT  EXTI0_IRQHandler           [WEAK]  
+EXPORT  EXTI1_IRQHandler           [WEAK]  
+EXPORT  EXTI2_IRQHandler           [WEAK]
+EXPORT  EXTI3_IRQHandler           [WEAK]
+EXPORT  EXTI4_IRQHandler           [WEAK]
+```
+
+- Hàm ```EXTI_GetITStatus(EXTI_Linex)```, Kiểm tra cờ ngắt của line x tương ứng.   
+- Hàm ```EXTI_ClearITPendingBit(EXTI_Linex)```: Xóa cờ ngắt ở line x.
+
+Cú pháp:
+```cpp
+void EXTI0_IRQHandler()
+{	if(EXTI_GetITStatus(EXTI_Line0) != RESET)
+	{
+
+	}
+	EXTI_ClearITPendingBit(EXTI_Line0);
+}
+```
+
+Ví dụ:
+```cpp
+//Ham xu ly khi co ngat line0
+void EXTI0_IRQHandler(){	
+	if(EXTI_GetITStatus(EXTI_Line0) != RESET){ //Kiem tra co ngat cua Line0
+		for(int i = 0; i<5; i++){
+			GPIO_SetBits(GPIOC, GPIO_Pin_13);
+			delay_ms(200);
+			GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+			delay_ms(200);
+		}
+	}
+	EXTI_ClearITPendingBit(EXTI_Line0); //Xoa co ngat cua line0
+}
+
+
+int main(){
+	RCC_Config();
+	GPIO_Config();
+	EXTI_Config();
+	NVIC_Config();
+	TIMER_config();
+	while(1){
+		GPIO_SetBits(GPIOC, GPIO_Pin_13);
+		delay_ms(3000);
+		GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+		delay_ms(3000);
+  }   
+}
+```
+
+Led tại PC13 sẽ nhấp nháy chậm, khi có ngắt tại PA0 cạnh xuống sẽ nhấp nháy nhanh 5 lần.
+
+### Ngắt Timer
+
+Tương tự với External Interrupt thì Timer Interrupt cũng cần phải cấp xung cho bộ AFIO.
+
+**Cấu hình ngắt Timer**
+```cpp
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
+	
+	TIM_TimeBaseInitStruct.TIM_ClockDivision = TIM_CKD_DIV2; // f = 36Mhz 
+	TIM_TimeBaseInitStruct.TIM_Prescaler = 36000-1; //1ms đếm lên một lần
+	TIM_TimeBaseInitStruct.TIM_Period =5000-1; //Chu kỳ 5000 tức đếm lên 5000 lần thì reset tức 5s.
+	
+	TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
+
+
+	TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE); //TIM_IT_Update: Khi Timer cập nhật lại bộ đếm về 0 thì tạo ngắt.
+	
+
+	TIM_Cmd(TIM2, ENABLE);
+```
+
+**Cấu hình NVIC**
+```cpp
+void NVIC_Config(void){
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);//Cau hinh so bit cua Preemption Priority vaf Sub Prioriry
+	
+	NVIC_InitTypeDef NVICInitStruct;
+
+	NVICInitStruct.NVIC_IRQChannel = TIM2_IRQn; //Cau hinh channel ngat la Timer2
+	NVICInitStruct.NVIC_IRQChannelPreemptionPriority = 0; //mamg gia tri tu 0-3 vi cai dat 2bit cho Preemption Priority
+	NVICInitStruct.NVIC_IRQChannelSubPriority = 0;	//mamg gia tri tu 0-3 vi cai dat 2bit cho Sub Priority
+	NVICInitStruct.NVIC_IRQChannelCmd = ENABLE;
+	
+	NVIC_Init(&NVICInitStruct);
+}
+```
+
+**Test delay**
+```cpp
+void delay_ms(uint16_t timedelay){
+	count = 0;
+	while(count < timedelay);
+}
+
+void TIM2_IRQHandler()
+{
+	if(TIM_GetITStatus(TIM2, TIM_IT_Update)){ //Kiem tra co ngat TIM_IT_UPDATe
+		count++;
+	}
+	// Clears the TIM2 interrupt pending bit
+	TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+}
+
+
+int main() {
+	RCC_Config();
+	TIM_Config();
+	GPIO_Config();
+	NVIC_Config();
+	while(1){
+		GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+		delay_ms(2000);
+		GPIO_SetBits(GPIOC, GPIO_Pin_13);
+		delay_ms(2000);
+	}
+}
+```
+Sử dụng ngắt Timer để tạo delay nhấp nháy led PC13.
+
+### Comunication Interrupt.
+STM32F1 hỗ trọ các ngắt cho các giao thức truyền nhận như SPI, I2C, UART…  
+Ở bài này ta sẽ ví dụ với UART ngắt.  
+Các ngắt ở SPI, I2C… sẽ được cấu hình tương tự như UART.  
+
+**Cấu hình UART**
+```cpp
+void UART_Config(void){
+	USART_InitTypeDef UARTInitStruct;
+	UARTInitStruct.USART_Mode = USART_Mode_Tx | USART_Mode_Rx; //Cau hinh che do: ca truyen va nhan (song cong)
+	UARTInitStruct.USART_BaudRate = 9600; //Cau hinh toc do bit
+	UARTInitStruct.USART_HardwareFlowControl = USART_HardwareFlowControl_None; //Cau hinh kiem soat luong truyen du lieu tranh viec tran bo dem
+	UARTInitStruct.USART_WordLength = USART_WordLength_8b; //Truyen du lieu 8 hoac 9 bit
+	UARTInitStruct.USART_Parity = USART_Parity_No;
+	UARTInitStruct.USART_StopBits = USART_StopBits_1;
+	
+	USART_Init(USART1, &UARTInitStruct);
+	
+	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);// Khi co du lieu gui toi thi goi ham ngat
+	
+	USART_Cmd(USART1, ENABLE);
+}
+```
+- Hàm ```USART_ITConfig(USART_TypeDef* USARTx, uint16_t USART_IT, FunctionalState NewState)``` gồm ba tham số:
+    - ```USART_TypeDef* USARTx```: Bộ UART cần cấu hình.
+    - ```uint16_t USART_IT```: Chọn nguồn ngắt UART, Có nhiều nguồn ngắt từ UART, ở bài này ta chú ý đến ngắt truyền (USART_IT_TXE) và ngắt nhận (USART_IT_RXNE).  
+    - ```FunctionalState NewState```: Cho phép ngắt.
+
+**Cấu hình NVIC tương tự**
+```cpp
+void NVIC_Config(void){
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+	
+	NVIC_InitTypeDef NVIC_InitStruct;
+
+	NVIC_InitStruct.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 1;
+	NVIC_InitStruct.NVIC_IRQChannelSubPriority = 1;
+	NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStruct);
+
+}
+```
+
+**Hàm phục vụ ngắt để nhận dữ liệu**
+
+Hàm ```USARTx_IRQHandler()``` sẽ được gọi nếu xảy ra ngắt trên Line ngắt UART đã cấu hình.
+
+Hàm ```USART_GetITStatus``` kiểm tra các cờ ngắt UART. Hàm này nhận 2 tham số là bộ USART và cờ tương ứng cần kiểm tra:  
+- ```USART_IT_RXNE```: Cờ ngắt nhận, cờ này set lên 1 khi bộ USART phát hiện data truyền tới.
+- ```USART_IT_TXE```: Cờ ngắt truyền, cờ này set lên 1 khi USART truyền data xong.  
+Có thể xóa cờ ngắt, gọi hàm ```USART_ClearITPendingBit``` để đảm bảo không còn ngắt trên line (thông thường cờ ngắt sẽ tự động xóa).
+
+```cpp
+
+uint8_t UART_ReceiveChar(USART_TypeDef *USARTx){
+	uint8_t  data = 0x00;
+	while(USART_GetFlagStatus(USARTx, USART_FLAG_RXNE)==RESET); //cho co nhan bat len 1 ( nhan hoan tat) thi tra ve gia tri data
+	data = USART_ReceiveData(USARTx);
+	return data;
+}
+
+uint8_t Data_Receive;
+
+void USART1_IRQHandler(){
+	if(USART_GetITStatus(USART1, USART_IT_RXNE)!=RESET){
+		Data_Receive = UART_ReceiveChar(USART1);
+	}
+	USART_ClearITPendingBit(USART1, USART_IT_RXNE);
+}
+
+uint16_t count = 0;
+int main() {
+	RCC_Config();
+	GPIO_Config();
+	UART_Config();
+	TIMER_config();
+	NVIC_Config();
+	while(1){
+		count++;
+		delay_ms(1000);
+	}
+}
+```
+Tại hàm phục vụ ngắt sẽ thực thi khi có dữ liệu được nhận tại USART1 để không bị mất dữ liệu và tại chương trình chính sẽ cộng biến Count lên 1.
+
+
+</details>
 
 
 
