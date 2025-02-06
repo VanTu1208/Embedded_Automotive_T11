@@ -72,7 +72,6 @@ void NVIC_Config(void){
 	NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVIC_InitStruct);
 
-
 }
 
 
@@ -80,7 +79,6 @@ uint8_t UART_ReceiveChar(USART_TypeDef *USARTx){
 	uint8_t  data = 0x00;
 	while(USART_GetFlagStatus(USARTx, USART_FLAG_RXNE)==RESET); //cho co nhan bat len 1 ( nhan hoan tat) thi tra ve gia tri data
 	data = USART_ReceiveData(USARTx);
-	USARTx->DR = 0x00; //Xoa du lieu trong thanh ghi DR de tranh viec bi ghi de len du lieu, dam bao data chinh xac
 	return data;
 }
 
