@@ -1637,6 +1637,135 @@ Tại hàm phục vụ ngắt sẽ thực thi khi có dữ liệu đượ
 
 
 
+## Bài 9: ADC - Analog Digital Converter
+<details><summary>Xem</summary>  
+
+Vi điều khiển cũng như hầu hết các thiết bị điện tử ngày nay đều sử dụng tín hiệu kĩ thuật số, dựa trên các bit nhị phân để hoạt động.  
+Tín hiệu thì không chỉ luôn luôn là tín hiệu số, đa số tín hiệu trong thực tế ở dạng tương tự và liên tục, vì thế để các thiết bị hiểu được cần phải chuyển đổi nó về dạng số.
+
+![ADC](https://i.imgur.com/1hRVRvb.png)
+
+ADC (Analog-to-Digital Converter) là 1 mạch điện tử lấy điện áp tương tự làm đầu vào và chuyển đổi nó thành dữ liệu số (1 giá trị đại diện cho mức điện áp trong mã nhị phân).
+
+Khả năng chuyển đổi của ADC được quyết định bởi 2 yếu tố chính:
+- Độ phân giải: Số bit mà ADC sử dụng để mã hóa tín hiệu. Có thể xem như là số mức mà tín hiệu tương tự được biểu diễn. ADC có **độ phân giải càng cao** thì cho ra kết quả chuyển đổi **càng chi tiết**. 
+
+- Tần số/chu kì lấy mẫu: tốc độ/khoảng thời gian giữa 2 lần mã hóa. **Tần số lấy mẫu càng lớn** thì tín hiệu sau khi chuyển đổi sẽ có **độ chính xác càng cao**. Khả năng tái tạo lại tín hiệu càng chính xác.  
+	```Tần số lấy mẫu = 1/(thời gian lấy mẫu+ Tg chuyển đổi.)```
+
+	**Tần số lấy mẫu phải lớn hơn tần số của tín hiệu ít nhất 2 lần để đảm bảo độ chính xác khi khôi phục lại tín hiệu.**
+
+### ADC trong STM32
+
+STM32F103C8 có 2 bộ ADC đó là ADC1 và ADC2 với nhiều mode hoạt động.  
+Kết quả chuyển đổi được lưu trữ trong thanh ghi 16 bit. 
+- Độ phân giải 12 bit.
+- Có các ngắt hỗ trợ.
+- Có thể điều khiển hoạt động ADC bằng xung Trigger.
+- Thời gian chuyển đổi nhanh : 1us tại tần số 65Mhz.
+- Có bộ DMA giúp tăng tốc độ xử lí.
+
+**Các chế độ của ADC**  
+Có 16 kênh ADC nhưng tại một thời điểm chỉ có một kênh được chuyển đổi dữ liệu
+- **Regular Conversion**:
+	- **Single**: ADC chỉ đọc 1 kênh duy nhất, và chỉ đọc khi nào được yêu cầu.
+	- **Single Continuous**: ADC sẽ đọc một kênh duy nhất, nhưng đọc dữ liệu nhiều lần liên tiếp (Có thể được biết đến như sử dụng DMA để đọc dữ liệu và ghi vào bộ nhớ). 
+	- Scan: **Multi-Channels**: Quét qua và đọc dữ liệu nhiều kênh, nhưng chỉ đọc khi nào được yêu cầu.
+	- Scan: **Continuous Multi-Channels Repeat**: Quét qua và đọc dữ liệu nhiều kênh, nhưng đọc liên tiếp nhiều lần giống như Single Continous. 
+- **Injected Conversion**:  
+	Trong trường hợp nhiều kênh hoạt động. Khi kênh có mức độ ưu tiên cao hơn có thể tạo ra một **Injected Trigger**. Khi gặp Injected Trigger thì ngay lập tức kênh đang hoạt động bị ngưng lại để kênh được ưu tiên kia có thể hoạt động.
+
+### Đọc giá trị Analog từ biến trở
+
+![Biến trở](https://i.imgur.com/Q6cnkUC.png)
+
+**Cấp xung cho ADC**
+```cpp
+void RCC_Config(void){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+}
+```
+Cấp xung cho bộ ADC và GPIO để cử dụng Pin, đồng thời cũng phải cấp cho bộ AFIO.
+
+**Cấu hình GPIO**
+```cpp
+void GPIO_Config(void){
+	GPIO_InitTypeDef GPIO_InitStruct;
+	
+	GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AIN; //Analog input
+	GPIO_InitStruct.GPIO_Pin = GPIO_Pin_0;
+	GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOA, &GPIO_InitStruct);
+}
+```
+Cấu hình chân PA0 với chức năng Analog Input ```GPIO_Mode_AIN```
+
+**Cấu hình ADC**
+```cpp
+void ADC_Config(void){
+	ADC_InitTypeDef ADC_InitStruct;
+	
+	ADC_InitStruct.ADC_Mode = ADC_Mode_Independent; //Hoat dong nhu ADC binh thuong, doc lap voi nhau va khong can kich hoat
+	ADC_InitStruct.ADC_NbrOfChannel = 1; //NumberOfChannel so luong kenh can cau hinh (1-16)
+	ADC_InitStruct.ADC_ContinuousConvMode = ENABLE;//Hoat dong o che do Continous hay khong
+	ADC_InitStruct.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None; //Cau hinh cho phep su dung Trigger (tin hieu de bat dau chuyen doi ADC)
+	ADC_InitStruct.ADC_ScanConvMode = DISABLE; //Co su dung Scan de quet nhieu kenh khong
+	ADC_InitStruct.ADC_DataAlign = ADC_DataAlign_Right;//Cau hinh de can le cho Data (ADC 12bit luu vao 16bit bi du 4 bit), ghi vao LSB hay MSB
+
+	ADC_Init(ADC1, &ADC_InitStruct);
+	
+	ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_55Cycles5);
+	
+	ADC_Cmd(ADC1, ENABLE);
+	//Bat dau qua trinh chuyen doi (Vi chon che do Continous nen chi can goi 1 lan)
+	ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+}
+```
+- ```ADC_Mode```: Cấu hình chế độ hoạt động cho bộ ADC
+	```
+	ADC_Mode_Independent: Các kênh hoạt động độc lập với nhau.                 
+	ADC_Mode_RegInjecSimult: Sử dụng cả hai mode Regular và Injected.                      
+	ADC_Mode_InjecSimult: Hoạt động chế độ Injected                  
+	ADC_Mode_RegSimult: Hoạt động ở chế độ Regular                                      
+	```
+
+- ```ADC_NbrOfChannel```: Số lượng ADC cần cấu hình 1-16
+- ```ADC_ContinuousConvMode```: Có chuyển đổi ADC liên tục hay không ```ENABLE``` hoặc ```DISABLE```		
+
+- ```ADC_ExternalTrigConv```: Cấu hình sử dụng kích chuyển đổi ADC ở bên ngoài như Timer, External Trigger.
+- ```ADC_ScanConvMode```: Có sử dụng Mode Scan để quét qua nhiều kênh hay không
+- ```ADC_DataAlign```: Cấu hình căn lề cho data. Vì bộ ADC xuất ra giá trị 12bit, được lưu vào biến 16 hoặc 32 bit nên phải căn lề các bit về trái hoặc phải. Nếu căn phải thì dữ liệu đọc giữ nguyên, căn trái dữ liệu đọc gấp 16 lần thực tế nếu được lưu vào biến 16 bits
+
+- Ngoài các tham số trên, cần cấu hình thêm thời gian lấy mẫu, thứ tự kênh ADC khi quét, ```ADC_RegularChannelConfig(ADC_TypeDef* ADCx, uint8_t ADC_Channel, uint8_t Rank, uint8_t ADC_SampleTime)```
+	- ```Rank```: Ưu tiên của kênh ADC. Cao nhất 1, thấp nhất 16
+	- ```SampleTime```: Thời gian lấy mẫu tín hiệu.
+		```
+		ADC_SampleTime_1Cycles5: Sample time equal to 1.5 cycles
+		ADC_SampleTime_7Cycles5: Sample time equal to 7.5 cycles
+		ADC_SampleTime_13Cycles5: Sample time equal to 13.5 cycles
+		ADC_SampleTime_41Cycles5: Sample time equal to 41.5 cycles	
+		ADC_SampleTime_55Cycles5: Sample time equal to 55.5 cycles	
+		ADC_SampleTime_71Cycles5: Sample time equal to 71.5 cycles	
+		ADC_SampleTime_239Cycles5: Sample time equal to 239.5 cycles	
+		```
+- ```ADC_SoftwareStartConvCmd(ADCx, NewState)```: Bắt đầu quá trình chuyển đổi
+
+- ```ADC_SoftwareStartConvCmd(ADC_TypeDef* ADCx, FunctionalState NewState)```: Bắt đầu quá trình chuyển đổi.
+- ```ADC_GetConversionValue(ADC_TypeDef* ADCx)```: Đọc giá trị chuyển đổi được ở các kênh ADC tuần tự.
+- ```ADC_GetDualModeConversionValue(void)```: Trả về giá trị chuyển đổi cuối cùng của ADC1, ADC2 ở chế độ kép. Trả về thanh ghi 32 bits, 16 bits đầu của ADC2 và 16 bits sau của ADC1
+
+### Bộ lọc Kalman
+Bộ lọc Kalman, được Rudolf (Rudy) E. Kálmán công bố năm 1960, là thuật toán sử dụng chuỗi các giá trị đo lường, bị ảnh hưởng bởi nhiễu hoặc sai số để ước đoán biến số nhằm tăng độ chính xác.
+![Kalman](https://i.imgur.com/2wJ7ubG.png)
+
+Gọi hàm ```SimpleKalmanFilter(float mea_e, float est_e, float q))```; Để khởi các giá trị sai số ước tính, sai số đo lường và sai số quá trình ban đầu.
+	- ```mea_e```: Sai số đo lường của phần cứng
+	- ```est_e```: Sai số dự đoán.
+	- ```q```: Sai số nhiễu quá trình từ tính hiệu đến bộ chuyển đổi ADC.
+
+
+</details>
 
 
 
