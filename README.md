@@ -1768,7 +1768,133 @@ Gọi hàm ```SimpleKalmanFilter(float mea_e, float est_e, float q))```; Để k
 </details>
 
 
+## Bài 10: DMA - Direct Memory Access
+<details><summary>Xem</summary>  
 
+**Khi truyền nhận dữ liệu không dùng DMA**  
+
+CPU sẽ điều khiển việc trao đổi data giữa Peripheral (UART, I2C, SPI, ...) và bộ nhớ (RAM) qua các đường bus. 
+
+CPU phải lấy lệnh từ bộ nhớ (FLASH) để thực thi các lệnh của chương trình. Vì vậy, khi cần truyền dữ liệu liên tục giữa Peripheral và RAM, CPU sẽ bị chiếm dụng, và không có thời gian làm các công việc khác, hoặc có thể gây miss dữ liệu khi transfer. 
+
+
+### Khái niệm DMA
+
+DMA – Direct memory access được sử dụng với mục đích truyền data với tốc độ cao từ thiết bị ngoại vi đến bộ nhớ cũng như từ bộ nhớ đến bộ nhớ mà không cần thông qua CPU.
+
+DMA có thể điều khiển data truyền từ:
+- Bộ nhớ đến Peripheral 
+- Ngược lại, Periph đến Bộ nhớ.
+- Giữa 2 vùng nhớ.
+mà không thông qua data bus  của CPU, giữ cho tài nguyên của CPU được rảnh rỗi cho các thao tác khác. Đồng thời tránh việc data nhận về từ ngoại vi bị mất mát.
+
+![DMA](https://i.imgur.com/wfdkwZu.png)
+
+CPU sẽ kích hoạt bộ DMA để làm việc thông qua Handshake, Sau đó data sẽ được trao đổi thông qua bộ DMA Controller. Sau đó DMA sẽ báo cho CPU tín hiệu hoàn thành và CPU có thể sử dụng các dữ liệu đó.
+
+![DMA Block Diagram](https://i.imgur.com/9DcK9TS.png)
+
+CPU(1) cấu hình và kích hoạt DMA(4) hoạt động
+
+Các ngoại vi(5) sẽ sử dụng DMA Request(6) để yêu cầu DMA(4) gửi nhận dữ liệu từ ngoại vi. DMA Request có thể là yêu cầu ngoại vi gửi dữ liệu đến SRAM hoặc từ SRAM đến ngoại vi.
+
+DMA(4) sẽ tiền hành thực hiện yêu cầu từ DMA Request(6)
+
+Lấy dữ liệu từ SRAM(2) thông qua Bus Matrix(3) <-> đi qua các đường bus ngoại vi <-> truy cập các thanh ghi của ngoại vi(5).
+
+Khi kết thúc, DMA(4) kích hoạt ngắt báo cho CPU(1) biết quá trình truyền nhận hoàn tất.
+
+### DMA trong STM32
+
+STM32F103C8T6 có hai bộ DMA. DMA1 gồm 7 kênh, DMA2 gồm 5 kênh.
+
+![DMA STM32](https://i.imgur.com/zTySk0H.png)
+
+- Các kênh đều có thể được cấu hình riêng biệt.
+- Mỗi kênh có thể phục vụ cho nhiều ngoại vi khác nhau nhưng không đồng thời.
+- Có 4 mức ưu tiên có thể lập trình cho mỗi kênh.
+- Kích thước data được sử dụng là 1 Byte, 2 Byte (Half Word) hoặc 4byte (Word)
+- Hỗ trợ việc lặp lại liên tục Data.
+- 5 cờ báo ngắt (```DMA Half Transfer, DMA Transfer complete, DMA Transfer Error, DMA FIFO Error, Direct Mode Error```).
+- Quyền truy cập tới Flash, SRAM, APB1, APB2, AHB.
+- Số lượng data có thể lập trình được lên tới 65535.
+- Đối với DMA2, mỗi luồng đều hỗ trợ để chuyển dữ liệu từ bộ nhớ đến bộ nhớ.
+
+DMA có hai chế độ hoạt động
+
+- Normal mode: Với chế độ này, DMA truyền dữ liệu cho tới khi truyền đủ 1 lượng dữ liệu giới hạn đã khai báo DMA sẽ dừng hoạt động. Muốn nó tiếp tục hoạt động thì phải khởi động lại
+ 
+- Circular mode: Với chế độ này, Khi DMA truyền đủ 1 lượng dữ liệu giới hạn đã khai báo thì nó sẽ truyền tiếp về vị trí ban đầu (Cơ chế như Ring buffer).
+
+### Sử dụng DMA
+
+**Cấp xung cho DMA thông qua bus AHB**
+```cpp
+RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA| RCC_APB2Periph_SPI1| RCC_APB2Periph_AFIO, ENABLE);
+RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+```
+
+**Cấu hình DMA**
+
+Các tham số cho bộ DMA được cấu hình trong struct DMA_InitTypeDef. Gồm:
+
+- ```DMA_PeripheralBaseAddr```: Cấu hình địa chỉ của ngoại vi cho DMA. Đây là địa chỉ mà DMA sẽ lấy data hoặc truyền data tới cho ngoại vi.
+- ```DMA MemoryBaseAddr```: Cấu hình địa chỉ vùng nhớ cần ghi/ đọc data	.
+- ```DMA_DIR```: Cấu hình hướng truyền DMA, từ ngoại vi tới vùng nhớ ```PeripheralSRC``` hay từ vùng nhớ tới ngoại vi ```PeripheralDST```.
+- ```DMA_BufferSize```: Cấu hình kích cỡ buffer. Số lượng bytes dữ liệu muốn gửi/nhận qua DMA.
+- ```DMA_PeripheralInc```: Cấu hình địa chỉ ngoại vi có tăng sau khi truyền DMA hay không.
+- ```DMA Memory Inc```: Cấu hình địa chỉ bộ nhớ có tăng lên sau khi truyền DMA hay không.
+- ```DMA_PeripheralDataSize```: Cấu hình độ lớn data của ngoại vi.
+- ```DMA_MemoryDataSize```: Cấu hình độ lớn data của bộ nhớ, ```Byte```, ```halfWord``` hoặc ```Word```
+- ```DMA_Mode```: Cấu hình mode hoạt động là Normal hay Circular 
+- ```DMA_Priority```: Cấu hình độ ưu tiên cho kênh DMA.
+- ```DMA_M2M```: Kích hoạt sử dụng truyền từ bộ nhớ đếm bộ nhớ cho kênh DMA ```Enable``` hoặc ```Disable```
+
+Sau khi cấu hình cho DMA xong, chỉ cần gọi hàm DMACmd cho ngoại vi tương ứng. Bộ DMA sẽ tự động truyền nhận data cũng như ghi dữ liệu vào vùng nhớ cụ thể. 
+
+```cpp
+DMA_Init(DMA1_Channel2, &DMA_InitStruct);
+DMA_Cmd(DMA1_Channel2, ENABLE);
+SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
+```
+- ```Channel2```: Ứng với ngoại vi SPI1, RX nhận.
+- Hàm ```SPI_I2S_DMACmd()``` cho phép truyền nhận DMA của bộ SPI.
+
+Ngoài ra còn các hàm để áp dụng các ngoại vi khác 
+```cpp
+void SPI_I2S_DMACmd(SPI_TypeDef* SPIx, uint16_t SPI_I2S_DMAReq, FunctionalState NewState)
+void I2C_DMACmd(I2C_TypeDef* I2Cx, FunctionalState NewState)
+void USART_DMACmd(USART_TypeDef* USARTx, uint16_t USART_DMAReq, FunctionalState NewState)
+void ADC_DMACmd(ADC_TypeDef* ADCx, FunctionalState NewState)
+```
+
+### PWM - Pulse Width Modulation
+Trong điều khiển động cơ servo, tín hiệu PWM (Điều chế độ rộng xung) được sử dụng để chỉ định góc mà động cơ servo sẽ xoay đến. Tín hiệu PWM có hai yếu tố quan trọng:
+
+- **Tần số**: Là số lần tín hiệu lặp lại trong một giây. Đối với servo, tần số thông thường là 50Hz (tức là, chu kỳ lặp lại sau mỗi 20ms).  
+- **Độ rộng xung** (Pulse Width ): Là thời gian tín hiệu ở mức cao trong mỗi chu kỳ. Độ rộng xung thường được đo bằng microsecond (µs) và quyết định góc mà servo sẽ xoay đến.
+
+Tỉ lệ độ rộng xung với chu kì xung gọi là chu kì nhiệm vụ(Duty Cycle).
+
+![Duty Cycle](https://i.imgur.com/Lw6k4H9.png)
+
+Đối với hầu hết các servo, độ rộng xung PWM để xoay đến góc 0 độ là khoảng 1000µs, và để xoay đến 180 độ là khoảng 2000µs. Các giá trị này có thể thay đổi tùy thuộc vào loại servo.
+
+Đối với hầu hết các servo, độ rộng xung PWM để xoay đến góc 0 độ là khoảng 1000µs, và để xoay đến 180 độ là khoảng 2000µs. Các giá trị này có thể thay đổi tùy thuộc vào loại servo.
+
+![Servo](https://i.imgur.com/w21VKen.png)
+
+**Công thức tính toán độ rộng xung**
+
+```pulseWidth = MIN_PULSE_WIDTH + (MAX_PULSE_WIDTH - MIN_PULSE_WIDTH) * angle / 180```
+
+- ```MIN_PULSE_WIDTH``` là độ rộng xung cho góc 0 độ (thường là 1000µs).
+- ```MAX_PULSE_WIDTH``` là độ rộng xung cho góc 180 độ (thường là 2000µs).
+- ```angle``` là góc mà servo xoay đến.
+
+
+</details>
 
 
 
