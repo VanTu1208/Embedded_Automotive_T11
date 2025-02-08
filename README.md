@@ -1897,5 +1897,182 @@ Tỉ lệ độ rộng xung với chu kì xung gọi là chu kì nhiệm vụ(Du
 </details>
 
 
+## Bài 11: Flash - Bootloader 
+
+<details><summary>Xem</summary>  
+
+![3MEM](https://i.imgur.com/oD2TG7T.png)
+
+- RAM dùng để lưu những biến thay đổi liên tục trong quá trình hoạt động
+- Flash dùng để lưu trữ mã lệnh của chương trình, những biến cố định
+- Eeprom lưu trữ những giá trị lâu dài
+
+### Flash
+
+STM32F1 không có EEPROM mà chỉ được cung cấp sẵn 128/64Kb Flash.  
+Được chia nhỏ thành các Bank (với bộ nhớ có kích thước lớn), mỗi Bank gồm nhiều Page, mỗi Page có kích thước 1KB để dễ dàng quản lý.  
+Trước khi ghi phải xóa, mỗi lần xóa phải **xóa cả page** thành ```0XFF```.  
+Khi ghi dữ liệu, chỉ có thể **ghi Halfword(16 bits) hoặc Word(32 bits)**.  
+Giới hạn số lần xóa/ghi
+
+**Các vùng nhớ của Flash**
+
+![Flash](https://i.imgur.com/s67xSc4.png)
+
+Thông thường chương trình sẽ được nạp vào vùng nhớ bắt đầu ở 0x08000000, vùng nhớ phía sau sẽ là trống và người dùng có thể lưu trữ dữ liệu ở vùng này.  
+Thư viện Std cung cấp các hàm để giao tiếp với Flash trong Module Flash. File "stm32f10x_flash.h".
+
+**Xóa một Page**
+![PageDelete](https://i.imgur.com/OWWxTKU.png)
+
+- Đầu tiên, kiểm tra cờ ```FLASH_CR_LOCK``` của Flash, nếu Cờ này đang được bật, Flash đang ở chế độ Lock và cần phải được Unlock trước khi sử dụng.
+- Sau khi Flash đã Unlock, cờ ```FLASH_CR_PER``` được set lên 1 để cho phép xóa page.
+- Gán dịa chỉ của Page cần xóa vào thanh ghi ```AR```.
+- Set bit ```FLASH_CR_STRT``` lên 1 để bắt đầu quá trình xóa Page.
+- Kiểm tra cờ ```FLASH_SR_BSY``` được reset về 0 khi quá trình xóa hoàn tất.
+- Reset cờ ```FLASH_CR_PER``` để vô hiệu hóa tính năng xóa Page
+- Lock Flash
+
+Các hàm LOCK, UNLOCK Flash:
+- ```void FLASH_Unlock(void)```: Hàm này Unlock cho tất cả vùng nhớ trong Flash.
+- ```void FLASH_UnlockBank1(void)```: Hàm này chỉ Unlock cho Bank đầu tiên. Vì SMT32F103C8T6 chỉ có 1 Bank duy nhất nên chức năng tương tự hàm trên.
+- ```void FLASH_UnlockBank2(void)```: Unlock cho Bank thứ 2.
+- ```void FLASH_Lock(void)```: Lock bộ điều khiển xóa Flash cho toàn bộ vùng nhớ Flash.
+- ```void FLASH_LockBank1(void)``` và ```void FLASH_LockBank2(void)```: Lock bộ điều khiển xóa Flash cho Bank 1 hoặc 2.
+
+Các Hàm xóa Flash:
+- ```FLASH_Status FLASH_EraseAllBank1Pages(void)```: Xóa tất cả các Page trong Bank 1 của Flash. 
+- ```FLASH_Status FLASH_EraseAllBank2Pages(void)```: Xóa tất cả các Page trong Bank 2 của Flash. 
+- ```FLASH_Status FLASH_EraseAllPages(void)```: Xóa toàn bộ Flash.
+- ```FLASH_Status FLASH_ErasePage(uint32_t Page_Address)```: Xóa 1 page cụ thể trong Flash, cụ thể là Page bắt đầu bằng địa chỉ Page_Address.
+
+
+Hàm xóa bằng thanh ghi
+```cpp
+void Flash_Erase1(uint32_t pageAddr)
+{
+	FLASH_Unlock();
+	while(FLASH_GetFlagStatus(FLASH_FLAG_BSY));
+	
+	FLASH->CR |= FLASH_CR_PER; //Bat xoa Page
+	FLASH->AR = pageAddr; // Them dia chi page vao thanh ghi AR
+	FLASH->CR |= FLASH_CR_STRT; //Bat dau xoa page
+	
+	while(FLASH->SR && FLASH_SR_BSY); //Doi den xoa hoan tat
+	
+	FLASH->CR &=(~FLASH_CR_PER); // Tat xoa page
+	
+	FLASH_Lock(); //Lock flash
+}
+```
+
+Hàm xóa sử dụng hàm có sẵn trong thư viện Flash
+```cpp
+void Flash_Erase(uint32_t pageAddr){
+	FLASH_Unlock();//Un lock tat ca vung nho trong Flash
+
+	while(FLASH_GetFlagStatus(FLASH_FLAG_BSY));//FLASH_FLAG_BSY = 1, khi Flash dang ban ghi/doc
+
+	FLASH_ErasePage(pageAddr);//Xoa Page theo dia thi duoc truyen vao
+
+	while(FLASH_GetFlagStatus(FLASH_FLAG_BSY) == 1);//Cho den khi xoa hoan tat
+
+	FLASH_Lock();//Lock toan bo Flash
+}
+```
+
+**Ghi giá trị vào Flash**
+
+![FlashWrite](https://i.imgur.com/BMPjISr.png)
+
+- Tương tự quá trình xóa, đầu tiên Cờ ```FLASH_CR_LOCK``` được kiểm tra.
+- Sau khi xác nhận đã Unlock, CỜ ```FLASH_CR_PG``` được set lên 1 để cho phép ghi.
+- Ghi dữ liệu vào địa chỉ Flash sử dụng con trỏ.
+- Kiểm tra cờ ```FLASH_CR_BSY``` để đợi quá trình ghi hoàn tất.
+- Lock Flash.
+
+- ```FLASH_Status FLASH_ProgramHalfWord(uint32_t Address, uint16_t Data)```:  Ghi dữ liệu vào vùng nhớ Address với kích thước mỗi 2 byte (Halfword).
+- ```FLASH_Status FLASH_ProgramWord(uint32_t Address, uint32_t Data)```: Ghi dữ liệu vào vùng nhớ Address với kích thước mỗi 4 byte (Word).
+- ```FlagStatus FLASH_GetFlagStatus(uint32_t FLASH_FLAG)```: hàm này trả về trạng thái của Flag. Ở bài này ta sẽ dùng hàm này để kiểm tra cờ.
+- ```FLASH_FLAG_BSY```: Cờ này báo hiệu rằng Flash đang bận (Xóa/Ghi) nếu được set lên 1. 
+
+```cpp
+void Flash_WriteHalfWord(uint32_t memAddr, uint16_t value){
+	FLASH_Unlock();
+	
+	while(FLASH_GetFlagStatus(FLASH_FLAG_BSY) == 1);
+	
+	FLASH_ProgramHalfWord(memAddr, value);
+	
+	while(FLASH_GetFlagStatus(FLASH_FLAG_BSY) == 1);
+	
+	FLASH_Lock();
+}
+```
+
+### Bootloader
+Quá trình cập nhật phần mềm từ xa, không thể yêu cầu người dùng mang thiết bị đến cửa hàng để nạp lại chương trình =>> Dùng phương pháp nạp phần mềm từ xa qua Wifi, Bluetooth.
+
+![](https://i.imgur.com/yi125KJ.png)
+
+![](https://i.imgur.com/u0CWU5Z.png)
+
+Chương trình nạp từ UART được lưu ở vùng nhớ khác, MCU không thể tự nhận biết và tìm đến để thực thi được.
+
+Vì thế, cần 1 chương trình lưu tại ```0x08000000``` để MCU có thể nhảy đến chương trình đó. Chương trình đặt tại ```0x08000000``` được gọi là Bootloader
+
+Bootloader là chương trình chạy đầu tiên khi khởi động, thường gồm 2 loại:
+- Bootloader do nhà sản xuất cung cấp.
+- Bootloader do người dùng tự viết.
+
+Trên vi điều khiển có hai tín hiệu dùng để điều khiển địa chỉ để sử dụng Bootloader
+![](https://i.imgur.com/DH8yhiA.png)
+
+**Quá trình từ khi cấp nguồn hoặc nhấn reset đến khi thực thi hàm ```main()```**
+- MCU đọc giá trị BOOT0 và BOOT1 để xác định vị trí bắt đầu đọc dữ liệu trong bộ nhớ.
+- Địa chỉ khởi đầu của vùng nhớ được lưu vào thanh ghi PC (Program Counter) để thực hiện đọc lệnh.
+- Giá trị tại ô nhớ đầu tiên được lấy để khởi tạo MSP (Main Stack Pointer).
+- Thanh ghi PC chuyển đến ô nhớ tiếp theo - **ô nhớ thứ 2** , nơi chứa địa chỉ của Reset_Handler - ngắt có độ ưu tiên cao nhất.
+- Chương trình nhảy đến **Reset_Handler** để thực thi các nhiệm vụ sau:
+    - Khởi tạo hệ thống.
+    - Sao chép dữ liệu (biến) từ FLASH sang RAM.
+    - Gọi hàm main().
+
+![](https://i.imgur.com/Cf6wh3J.png)
+
+- Sau khi reset, vi điều khiển nhảy đến Reset_Handler() mặc định, từ đó thực thi hàm main() của chương trình Bootloader.
+- Chương trình Bootloader sẽ khởi tạo lại MSP (Main Stack Pointer) bằng cách lấy dữ liệu từ ô nhớ đầu tiên của vùng lưu trữ chương trình Application.
+- Gọi hàm Bootloader(), hàm này sẽ thiết lập thanh ghi ```SCB_VTOR``` theo địa chỉ của Application cần nhảy đến, tức là: ```SCB → VTOR``` = Firmware address(địa chỉ của chương trình chính).
+- Vi điều khiển tiếp tục nhảy đến ô nhớ tiếp theo, chính là Reset_Handler của chương trình Application.
+- Tại đây, Firmware mới bắt đầu chạy. 
+
+Do vi xử lý đã nhận diện Reset_Handler() tại địa chỉ mới, nên nếu tiếp tục nhấn reset, hệ thống vẫn hoạt động trong Application mà không quay lại Bootloader.
+
+**Hàm Boot**
+```cpp
+void Boot(){
+	RCC_DeInit();// Vo hieu hoa toan bo cac bus de tranh ngoai vi hoat dong
+	
+	//Vo hieu hoa toan bo cac qua trinh xu ly loi tranh gay ngat trong qua trinh boot
+	SCB->SHCSR &= ~(SCB_SHCSR_USGFAULTENA_Msk| SCB_SHCSR_BUSFAULTENA_Msk| SCB_SHCSR_MEMFAULTENA_Msk);
+	
+	//Cai dat dia chi cua chuong trinh moi cho Main Stack Pointer de khi reset thi van chay ct moi
+	__set_MSP(*(__IO uint32_t*)(NewAddr));
+	
+	//Cap nhat thanh ghi VTOR de tro den bang vector ngat cua chuong trinh chinh
+	SCB->VTOR = NewAddr;
+	
+	//Lay dia chi Reset Handler cua chuong trinh chinh
+	uint32_t JumpAddress = *(__IO uint32_t*)(NewAddr+4);
+	
+	//Tao con tro ham de tro vao dia chi cua ham reset handler
+	void (*reset_handler)(void) = (void (*)(void)) JumpAddress;
+	
+	//Goi ham reset Handler
+	reset_handler();
+}
+```
+
+</details>
 
 
