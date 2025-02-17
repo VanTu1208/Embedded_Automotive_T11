@@ -2076,3 +2076,340 @@ void Boot(){
 </details>
 
 
+## Bài 12: Lý thuyết CAN - Controller Area Network
+
+<details><summary>Xem</summary>  
+
+Giao thức CAN (Controller Area Network) là một giao thức truyền thông được sử dụng rộng rãi trong các hệ thống nhúng, đặc biệt là trong lĩnh vực ô tô và các ứng dụng công nghiệp. CAN cho phép các vi điều khiển và các thiết bị khác nhau giao tiếp với nhau mà không cần có máy tính chủ.
+
+So sánh với các chuẩn giao tiếp khác
+- SPI: Khi nhiều Slave thì yêu cầu phần cứng cao hơn vì phải thêm các chân CS
+- UART: thì chỉ có thể giao tiếp giữa hai phần cứng với nhau
+- I2C: Mỗi lần truyền chỉ truyền 8 bit và truyền các bit địa chỉ. Ngoài ra I2C chỉ có các xác nhận ACK để đảm bảo đã truyền thành công chứ không có cơ chế phát hiện lỗi.
+
+Vì thế, chúng ta sẽ sử dụng **CAN** với các ưu điểm sau:
+- Cho phép nhiều hệ thống điều khiển (ECU) giao tiếp với nhau trên một bus truyền thông chung.
+- Giảm số lượng dây dẫn, giúp tiết kiệm chi phí và tăng độ tin cậy của hệ thống.
+- Không yêu cầu máy tính chủ (master) để điều phối các thiết bị. Các thiết bị trên bus CAN có thể truyền dữ liệu bất cứ lúc nào, với cơ chế arbitrage tự động để tránh xung đột dữ liệu.
+- Độ tin cậy cao, đảm bảo việc phát hiện lỗi tự động thông qua cơ chế kiểm tra và sửa lỗi. Điều này cực kỳ quan trọng trong các hệ thống ô tô yêu cầu an toàn cao.
+
+### Kiến trúc mạng CAN
+
+![](https://i.imgur.com/PGz5JdP.png)
+
+Giao thức CAN sử dụng topology bus để kết nối các thiết bị với nhau, nghĩa là tất cả các thiết bị (node) đều được kết nối song song vào một cặp dây truyền thông chung được gọi là CAN bus.
+
+CAN bus này gồm hai dây tín hiệu chính, là:
+- CAN_H (CAN High): Dây tín hiệu cao.
+- CAN_L (CAN Low): Dây tín hiệu thấp.
+tạo thành 1 Bus, các thiết bị được nối chung trên 2 dây này và gọi là 1 **node** trong mạng.
+
+Các tín hiệu truyền qua bus CAN là **tín hiệu vi sai** (differential signaling), nghĩa là thông tin được mã hóa dựa trên sự **chênh lệch điện áp giữa hai dây CAN_H và CAN_L**. Điều này giúp mạng CAN chống lại nhiễu từ môi trường và duy trì tín hiệu ổn định trên đường truyền.
+
+
+**Trạng thái 0 - dominant và 1 - recessive**  
+Bus CAN định nghĩa hai trạng thái điện áp là “dominant” và “recessive”, tương ứng với hai trạng thái bit là 0 và 1. Hai trạng thái này sẽ được xử lý bởi Transceiver của Node. Có 2 loại CAN tương ứng với các giá trị điện áp khác nhau là **CAN low speed và CAN high speed**.
+
+![](https://i.imgur.com/mwQxkEw.png)
+
+- Nếu độ chênh lệch điện áp giữa CAN_H và CAN_L > 2.5V thì là bit dominant
+- Nếu độ chênh lệch < 0.5V thì đó là bit recessive
+
+**Bit dominant sẽ có độ ưu tiên cao hơn bit recessive**
+
+### Cơ chế giảm nhiễu của CAN
+
+Khi có nhiễu xuất hiện, sẽ làm giá trị vi sai lệch và làm thay đổi bit. Vì thế phải có cơ chế giảm nhiễu.
+
+**Xoắn hai dây CAN_H và CAN_L lại với nhau**
+
+![](https://i.imgur.com/4ptJ8dU.png)
+
+- Giảm thiểu nhiễu từ môi trường bên ngoài: Khi có nhiễu tác động là vào hai đoạn dây, khi bị xoắn lại với nhau thì cả hai dây sẽ chịu tác động với giá trị nhiễu là như nhau. Khi đó khi tính độ chệnh lệch điện áp, cả hai dây cùng tăng hoặc giảm áp do nhiễu, vì thế giá trị tính được sẽ không thay đổi.
+- Giảm thiểu nhiễu xuyên âm: Việc xoắn đôi các dây giúp giảm hiện tượng này bằng cách phân tán nhiễu xuyên âm ra khắp chiều dài của cáp.
+
+**Gắn Termination resistor (Điện trở kết cuối) 120Ohm ở hai đầu đoạn dây**  
+- Mỗi đầu của bus CAN cần một điện trở kết cuối với giá trị 120Ω để ngăn chặn hiện tượng phản xạ tín hiệu. Nếu không có điện trở này, tín hiệu có thể bị phản xạ lại từ các đầu cuối mở, gây ra nhiễu và làm hỏng dữ liệu.
+- Điện trở giá trị 120Ω  bởi vì để hấp thụ toàn bộ sóng phản xạ thì điện trở kết cuối phải bằng giá trị của trở kháng đặc tính của đường dây, giá trị này phụ thuộc vào các yếu tố vật lý như chiều dài, chất liệu, tiết diện của đường dây.
+
+
+### Cấu trúc của CAN node
+
+![](https://i.imgur.com/mkB9WHA.png)
+
+Mạng CAN được hình thành bởi một nhóm các node được kết nối song song với nhau thông qua topology bus và không cần máy tính chủ.  
+Một Node sẽ bao gồm các thành phần:
+
+- **Bộ điều khiển CAN (CAN Controller)**: Đây là thành phần chính trong node CAN, có nhiệm vụ xử lý toàn bộ giao tiếp CAN.
+    - Gửi và nhận thông điệp CAN.
+    - Điều khiển truy cập vào bus CAN (arbitration).
+    - Phát hiện và xử lý các lỗi truyền thông CAN.
+    - Kiểm soát việc truyền lại thông điệp khi gặp lỗi.
+    - Cung cấp giao diện giữa các vi điều khiển và bus CAN.
+- **Transceiver CAN (CAN Transceiver)**: Chuyển đổi tín hiệu số từ bộ điều khiển CAN thành tín hiệu điện áp dạng differential (CAN_H và CAN_L) để gửi lên bus CAN và ngược lại
+    - Đảm bảo tín hiệu truyền và nhận trên bus CAN có độ chính xác và tốc độ cao.
+- **Vi điều khiển (Microcontroller)**: là thành phần trung tâm điều khiển hoạt động của node CAN.
+    - Đọc và xử lý thông điệp CAN được nhận.
+    - Tạo ra thông điệp CAN để truyền đi.
+    - Quản lý các khung dữ liệu, bit arbitration và quá trình xử lý lỗi.
+    - Điều khiển hành vi của node (ví dụ: bật/tắt node, reset node khi gặp lỗi bus-off).
+
+
+
+
+### Nguyên tắt hoạt động
+
+- Thông điệp dữ liệu được truyền từ bất kỳ nút nào trên bus CAN **không chứa địa chỉ** của nút truyền hoặc của bất kỳ nút nhận dự kiến nào.
+- Thay vào đó, nội dung của thông điệp được gắn nhãn bởi một số nhận dạng **(ID)** là duy nhất trên toàn mạng. 
+- Tất cả các nút khác trên mạng đều nhận được thông điệp và mỗi nút thực hiện kiểm tra sự chấp nhận trên mã ID để xác định xem thông điệp có liên quan đến nút đó hay không. Nếu thông điệp có liên quan, nó sẽ được xử lý, nếu không thì nó bị bỏ qua
+
+
+**Xảy ra trường hợp nếu nhiều Node muốn gửi dữ liệu cùng lúc thì cần phải Tranh chấp quyền gửi (Arbitration)**  
+
+Một đặc điểm quan trọng của mạng CAN là khả năng giải quyết tranh chấp quyền gửi dữ liệu giữa các node. Nếu có nhiều node cùng muốn gửi dữ liệu lên bus cùng một lúc, cơ chế arbitration sẽ được thực hiện:
+- Mỗi thông điệp CAN có một ID ưu tiên. Node nào có thông điệp với ID ưu tiên thấp hơn (tức có độ ưu tiên cao hơn) sẽ chiếm quyền truy cập bus và gửi thông điệp trước.
+- Những node khác có ID ưu tiên cao hơn sẽ tự động dừng lại và chờ lượt tiếp theo để gửi thông điệp.
+- Quá trình arbitration diễn ra mà không gây mất dữ liệu hay làm gián đoạn các thiết bị khác, vì thế mạng CAN là một hệ thống non-destructive (không gây mất dữ liệu).
+
+Khi phân xử, bit ID có giá trị **0 sẽ được ưu tiên hơn**.
+Node sẽ dựa vào giá trị điện áp trên bus để quyết định.
+
+![](https://i.imgur.com/p1kBRjn.png)
+
+Ở ví dụ trên, nếu ba Node cùng muốn gửi dữ liệu thì sẽ cần phải tranh chấp.
+
+Tại bit 1 tới bit 6 thì các Node gửi cùng giá trị nên được phép gửi tiếp. Nhưng tại bit thứ 7, Node 2 gửi bit recessive nhưng Node 1 và 3 gửi bit dominant, theo nguyên tắt bit 0 ưu tiên hơn thì Node hai phải vào trạng  thái Listen Only để đọc và chờ đến khi hoàn tất thông điệp này thì mới tiếp tục tranh chấp và gửi lại.
+
+Để nhận bit được quyền ưu tiên, Khi Node trên điện áp lên hai dây CAN_H và CAN_L thì sẽ nhận lại giá trị được truyền đi trên dây. Nhưng khi Node truyền đi bit recessive tức CAN_H 1.75V và CAN_L 3.25V nhưng nhận lại giá trị dominant CAN_H 4V và CAN_L 1V thì Node đó biết đã có Node có thông điệp được ưu tiên hơn đang truyền và mình sẽ vào trạng thái chờ.
+
+### Các loại Frame truyền trong CAN
+
+Có 4 loại Frame là Data Frame, Remote Frame, Error Frame và Overload Frame.
+
+
+#### Data Frame (Truyền Data)
+Data Frame là khung phổ biến nhất được sử dụng trong giao thức CAN (Controller Area Network). Nó được sử dụng để truyền dữ liệu thực tế giữa các node trên mạng CAN.   
+Data Frame bao gồm các thông tin về địa chỉ của node gửi và nhận, kích thước dữ liệu, và chính dữ liệu cần truyền. Frame này giúp đảm bảo rằng dữ liệu sẽ được truyền đúng cách và bảo vệ khỏi lỗi bằng cách sử dụng mã kiểm tra CRC.
+
+![](https://i.imgur.com/MhhfK9f.png)
+
+- **Start of Frame (SOF)**: 1 bit để báo hiệu bắt đầu của khung truyền.
+- **Arbitration Field**: Là nhân tố được so sánh trong cơ chế phân quyền. 
+    - Chứa ID của thông điệp cần gửi, có thể là 11-bit (Standard Frame) hoặc 29-bit (Extend Frame), giúp phân biệt giữa các node. 
+    - Trường này cũng chứa bit RTR để xác định kiểu khung là Data Frame (Dominant) hay Remote Frame(Recessive).
+- **Control Field**: Chứa DLC (Data Length Code), chỉ ra số byte dữ liệu trong khung, từ 0 đến 8 byte.
+    - Bit r: là bit bảo tồn và không có chức năng gì cả
+    - Bit IDE để nhận định bit thuộc CAN tiêu chuẩn (Dominant) hoạc CAN mở rộng (Recessive)
+- **Data Field**: Chứa dữ liệu thực tế cần truyền. Độ dài từ 0 đến 8 byte tùy thuộc vào giá trị của DLC.
+- **CRC Field (Cyclic Redundancy Check)**: Dùng để phát hiện lỗi trong quá trình truyền thông qua mạng.
+    - CRC delimetier: Để phân cách trường CRC với ACK
+- **ACK Field (Acknowledgment)**: Node nhận sẽ gửi tín hiệu ACK để xác nhận rằng dữ liệu đã được nhận thành công.
+    - ACK slot: Bit recessive, khi nhận thành công thì bên nhận sẽ chờ đến thời gian gửi ACK Slot để kéo đường dây xuống bit dominant (ưu tiên hơn), khi này bên gửi sẽ đọc lại Bus bit 0 để xác nhận đã nhận thành công. Nếu vẫn bằng recessive thì vẫn chưa nhận được
+    - ACK delimetier để phân cách ACK với EOF
+- **End of Frame (EOF)**: 7 bit kết thúc khung.
+
+
+#### Remote Frame (Yêu cầu Data)
+
+Remote Frame được sử dụng khi một node trên mạng CAN yêu cầu dữ liệu từ một node khác. Thay vì chứa dữ liệu thực, Remote Frame chứa ID của node cần yêu cầu, cùng với bit điều khiển RTR (Remote Transmission Request).  
+Remote Frame thường được sử dụng trong các hệ thống mà một node có thể yêu cầu thông tin từ một node khác mà không có dữ liệu nào được truyền ngay lập tức.  
+**Node nhận yêu cầu sẽ trả lời bằng một Data Frame chứa dữ liệu cần thiết với ID giống với ID của Remote Frame trước đó.**
+
+![](https://i.imgur.com/sLMffac.png)
+
+Cấu trúc là tương tự với Data Frame nhưng tại Arbitration Field có bit RTR là bit Recessive để xác định đây là gói tin Remote. Vì thế khi có hai gói tin Data và Remote được truyền đi với cùng ID thì gói tin Data có ưu tiên cao hơn vì bit RTR là dominant.  
+Ngoài ra, gói tin Remote **không có Data Field**.
+ 
+Ý nghĩa các trường khác đều giống với Data Frame.
+- Start of Frame (SOF): 1 bit báo hiệu bắt đầu của khung.
+- Arbitration Field: Bao gồm định danh (11-bit hoặc 29-bit Identifier) và bit RTR được đặt thành 1 để báo đây là Remote Frame.
+- Control Field: Chứa DLC (Data Length Code), chỉ ra số byte dữ liệu mà Data Frame sẽ chứa.
+- CRC Field (Cyclic Redundancy Check): Được sử dụng để kiểm tra tính toàn vẹn của khung.
+- ACK Field (Acknowledgment): Sử dụng để xác nhận rằng khung đã được nhận.
+- End of Frame (EOF): 7 bit kết thúc khung.
+
+#### Error Frame
+
+- Error Frame được sử dụng khi một node phát hiện ra lỗi trong quá trình truyền dữ liệu. Nó được gửi để thông báo cho các node khác rằng có lỗi đã xảy ra trên bus. Bất kỳ node nào phát hiện ra lỗi đều có thể gửi Error Frame.
+- Error Frame có vai trò rất quan trọng trong việc duy trì độ tin cậy của mạng CAN. Khi một lỗi xảy ra, Error Frame sẽ báo hiệu để các node khác biết rằng thông điệp vừa được truyền không hợp lệ và cần được truyền lại.
+
+**Các lỗi xuất hiện trong CAN**
+
+- **Bit Error**
+    - Bit Error xảy ra khi một node gửi một bit (dominant hoặc recessive) lên bus và nhận lại một bit khác với giá trị mong đợi. 
+    - Trong mạng CAN, mỗi node không chỉ gửi dữ liệu mà còn tự lắng nghe các tín hiệu trên bus để kiểm tra sự đồng bộ.
+    - Nguyên nhân:
+        - Nếu một node gửi một bit recessive (1) nhưng nhận lại bit dominant (0) từ bus, node này sẽ phát hiện ra lỗi.
+        - Điều này có thể xảy ra khi một node khác có ưu tiên cao hơn trên bus đang truyền dữ liệu, hoặc do tín hiệu bị nhiễu.
+- **Stuff Error**
+    - Stuff Error xảy ra khi có hơn 5 bit liên tiếp cùng giá trị (tất cả đều là 0 hoặc tất cả đều là 1) trên bus CAN. Điều này vi phạm quy tắc **bit stuffing** của giao thức CAN.
+    - Quy tắc bit stuffing: Trong mạng CAN, sau mỗi chuỗi 5 bit giống nhau liên tiếp, một bit ngược giá trị (ngược với giá trị của các bit trước đó) phải được thêm vào để đảm bảo tính đồng bộ và tránh nhiễu tín hiệu. Nếu quy tắc này bị vi phạm, lỗi sẽ xảy ra.
+    - Nguyên nhân: Vi phạm quy tắc bit stuffing có thể do lỗi trong quá trình truyền tín hiệu hoặc do thiết bị không tuân theo quy chuẩn CAN.
+- **CRC Error**
+    - CRC Error xảy ra khi có sai lệch trong quá trình kiểm tra CRC (Cyclic Redundancy Check), được sử dụng để phát hiện lỗi trong dữ liệu truyền qua bus.
+    - Cơ chế CRC:
+        - Trong mỗi khung dữ liệu CAN, có một CRC Field được sử dụng để kiểm tra tính toàn vẹn của dữ liệu. Trường này chứa giá trị CRC, được tính toán dựa trên nội dung của thông điệp.
+        - Node nhận sẽ tính toán lại giá trị CRC của dữ liệu nhận được và so sánh với CRC trong trường CRC Field. Nếu hai giá trị này không khớp, một CRC error sẽ được phát hiện.
+    - Nguyên nhân: Lỗi CRC có thể xảy ra do nhiễu tín hiệu trong quá trình truyền dữ liệu hoặc do lỗi phần cứng trong node gửi hoặc nhận.
+- **Form Error**
+    - Form Error xảy ra khi cấu trúc khung dữ liệu không tuân theo quy chuẩn của giao thức CAN. Mỗi khung dữ liệu trong CAN phải tuân theo một cấu trúc định sẵn, bao gồm Start of Frame (SOF), Arbitration Field, Control Field, Data Field, CRC Field, ACK Field, và End of Frame (EOF).
+    - Nguyên nhân: Nếu một node nhận thấy có lỗi trong định dạng của bất kỳ trường nào trong khung dữ liệu, đặc biệt là các bit trong EOF hoặc ACK Field, nó sẽ phát hiện Form Error.
+- **Acknowledgment Error**
+    - Acknowledgment Error (ACK Error) xảy ra khi node gửi thông điệp lên bus mà không nhận được bit ACK từ bất kỳ node nào trên mạng.
+    - Cơ chế ACK trong CAN:
+        - Khi một node gửi thành công một khung dữ liệu, các node nhận phải gửi một bit ACK dominant (0) để xác nhận rằng dữ liệu đã được nhận chính xác.
+        - Nếu không có node nào gửi bit ACK, node gửi sẽ phát hiện ACK Error và phải truyền lại thông điệp.
+    - Nguyên nhân:
+        - Thiết bị nhận có thể không hoạt động đúng cách hoặc không kết nối đúng vào bus CAN.
+        - Tín hiệu ACK có thể bị nhiễu hoặc lỗi phần cứng.
+        - Id của gói tin không trùng phù hợp với bất kỳ node nào trong mạng.
+
+
+- Error Frame gồm hai phần:
+    - **Error Flag** là chuỗi từ 6 đến 12 bit dominant, báo hiệu trạng thái lỗi.   
+    - **Error Delimiter** là chuỗi 8 bit recessive, kết thúc Error Frame.
+![](https://i.imgur.com/isTCb1L.png)
+
+Khi phát hiện lỗi, các node trong mạng CAN sẽ tự động chuyển đổi giữa ba trạng thái lỗi để đảm bảo hệ thống hoạt động ổn định và không gây gián đoạn cho bus.
+
+Các trạng thái lỗi được xác định bởi **Error Flag**:
+- **Error Active**: Trong trạng thái Error Active, **node vẫn có khả năng tham gia đầy đủ vào quá trình truyền thông và có thể phát hiện lỗi**. Nếu node phát hiện lỗi, nó sẽ gửi một Error Frame để thông báo cho các node khác trên bus rằng đã xảy ra lỗi một **Error Flag gồm 6 bit dominant liên tiếp**.
+    - Ví dụ: Một cảm biến nhiệt độ trong hệ thống công nghiệp phát hiện một Bit Error do tín hiệu CAN bị nhiễu. Node phát hiện lỗi này sẽ phát ra một Active Error Frame với 6 bit dominant. Các node khác trên mạng sẽ tạm ngừng giao tiếp và xử lý lại quá trình truyền thông.
+- **Error Passive**
+    - Nếu một node **phát hiện quá nhiều lỗi**, nó sẽ chuyển sang trạng thái Error Passive. Trong trạng thái này, **node vẫn có thể tham gia truyền thông**, nhưng nếu phát hiện lỗi, nó sẽ không gửi Error Frame mạnh mẽ như trong trạng thái Error Active. Điều này giúp tránh gây gián đoạn lớn cho bus khi node gặp sự cố thường xuyên. **Phát ra Error Flag 12 bit gồm 6 bit dominant và 6 bit recessive**
+- Trong trạng thái Error Passive, node vẫn có thể nhận và gửi thông điệp nhưng sẽ hạn chế việc can thiệp vào quá trình truyền thông của các node khác. Node chỉ gửi Error Frame yếu hơn để thông báo lỗi, và không ảnh hưởng đến quá trình truyền thông của các node khác.
+- **Bus Off**: Khi một node **gặp quá nhiều lỗi nghiêm trọng**, nó sẽ chuyển sang trạng thái Bus Off. Trong trạng thái này, node sẽ **hoàn toàn ngắt kết nối khỏi bus CAN và không thể tham gia vào quá trình truyền hay nhận dữ liệu**. Node chỉ có thể **được kết nối lại vào bus sau khi được khởi động lại (restart) hoặc reset bởi phần mềm**.
+    - Bus Off là trạng thái an toàn, ngăn chặn một node bị lỗi nặng gây ra sự cố nghiêm trọng cho toàn bộ hệ thống CAN.
+
+**Chuyển đổi giữa các trạng thái Active và Passive**
+- **Error Counter**: Các node CAN quản lý một Error Counter để theo dõi số lượng lỗi mà chúng gặp phải. Mỗi khi một lỗi được phát hiện, giá trị của Error Counter sẽ tăng lên.
+- Khi Error Counter vượt qua **ngưỡng 127**, node sẽ chuyển từ trạng thái **Active Error sang Passive Error**. Trong trạng thái này, node sẽ phát ra Passive Error Frame nếu phát hiện lỗi.
+- Nếu Error Counter tiếp tục tăng và vượt **ngưỡng 255**, node sẽ chuyển sang trạng thái **Bus Off**, tức là node sẽ bị loại khỏi mạng CAN và không thể giao tiếp thêm cho đến khi được reset lại.
+
+
+
+#### Overload Frame
+
+Overload Frame là một loại khung đặc biệt trong giao thức CAN được sử dụng để trì hoãn việc truyền dữ liệu khi một node trong mạng CAN cần thêm thời gian để xử lý.  
+Khung này không chứa dữ liệu, mà chỉ báo hiệu rằng một node đang quá tải và cần thời gian trước khi tiếp tục giao tiếp.  
+Mục tiêu của Overload Frame là ngăn không cho các khung khác được truyền quá nhanh, giúp node bị quá tải có đủ thời gian để xử lý các khung trước đó.  
+
+Overload Frame không phải do người dùng phát ra, mà được tự động phát ra bởi phần cứng CAN khi cần thiết. Node CAN sẽ phát ra Overload Frame khi một trong các điều kiện sau xảy ra:
+- Node không thể xử lý tiếp dữ liệu do buffer đã đầy hoặc cần thêm thời gian xử lý dữ liệu.
+- Node không thể nhận khung mới do có quá trình xử lý nội bộ cần hoàn thành trước.
+
+![](https://i.imgur.com/sI9oA2u.png)
+
+Cấu trúc của Overload Frame:
+- Overload Flag: 6 bit dominant (bit 0) để báo hiệu trạng thái quá tải.
+- Overload Delimiter: 8 bit recessive (bit 1), để phân tách khung quá tải với các khung khác và báo hiệu kết thúc Overload Frame.
+
+
+### Tốc độ truyền và giới hạn vật lý của CAN
+
+Giao thức CAN được thiết kế để hoạt động hiệu quả trong các hệ thống nhúng với khả năng truyền thông dữ liệu tin cậy và độ trễ thấp.  
+Một số yếu tố quan trọng ảnh hưởng đến hiệu suất của mạng CAN bao gồm **tốc độ truyền (baud rate), chiều dài của bus**. Các yếu tố này liên quan chặt chẽ với nhau, ảnh hưởng đến khả năng truyền tín hiệu trên bus CAN.
+
+#### Tốc độ baud của CAN liên hệ tới chiều dài
+
+**Tốc độ baud** là tốc độ truyền dữ liệu trên bus CAN, thường được đo bằng kbps hoặc Mbps. Tốc độ baud quyết định tốc độ truyền thông giữa các thiết bị trên mạng và phụ thuộc vào khả năng xử lý của hệ thống cũng như chiều dài của bus.
+
+- Mạng CAN hỗ trợ dải tốc độ baud từ 10 kbps đến 1 Mbps.
+    - 10 kbps: Tốc độ thấp nhất, thường được sử dụng cho các hệ thống có yêu cầu truyền thông chậm, nhưng cần truyền xa.
+    - 1 Mbps: Tốc độ cao nhất, thường được sử dụng trong các ứng dụng yêu cầu truyền thông nhanh, chẳng hạn như trong hệ thống ô tô hoặc robot.
+
+**Tốc độ càng cao, độ trễ càng thấp, chiều dài tối đa đường dây giảm**
+
+Giải thích:  
+- Tốc độ truyền càng cao, chiều dài bus càng ngắn: Điều này do thời gian lan truyền tín hiệu trên dây dẫn cần phải nhỏ hơn một khoảng thời gian nhất định để đảm bảo tất cả các node trên bus có thể nhận được tín hiệu đồng bộ.
+- Khi tốc độ baud tăng lên, thời gian bit ngắn lại, nghĩa là tín hiệu phải đến các node nhận nhanh hơn. Do đó, chiều dài tối đa của bus phải giảm để đảm bảo thời gian lan truyền tín hiệu phù hợp với tốc độ baud.
+
+#### Cài đặt tốc độ truyền
+
+Để có thể cài đặt tốc độ truyền, ta sẽ chỉnh sửa thời gian mà một bit được tồn tại trên bus. Được chia thành 4 giai đoạn
+
+![](https://i.imgur.com/kj27OHX.png)
+
+- **Sync Segment:** là đoạn đầu tiên của mỗi bit và có độ dài cố định là **1 time quanta (TQ)**. Đoạn này giúp **đồng bộ hóa tất cả các node trên bus**. Nó đảm bảo rằng tất cả các node đều nhận biết sự bắt đầu của một bit tại cùng một thời điểm. Node nhận sẽ phát hiện ra cạnh thay đổi (rising edge hoặc falling edge) của tín hiệu CAN tại đoạn này để điều chỉnh thời gian của chính nó, đảm bảo đồng bộ với các node khác trên bus.
+- **Propagation Segment**: Đoạn này bù đắp thời gian cần thiết để tín hiệu lan truyền qua bus CAN từ node gửi đến node nhận. Tín hiệu cần thời gian để di chuyển từ một node đến một node khác, và thời gian này **phụ thuộc vào chiều dài của bus và tốc độ truyền**. Propagation Segment được cấu hình sao cho nó bao gồm độ trễ lan truyền và thời gian trễ xử lý của cả phần cứng CAN. **Node nhận càng xa Node gửi thì Propagation Segment càng lớn**.
+
+- **Phase Segment 1 (PS1) và Phase Segment 2 (PS2)**: Hai phân đoạn này được sử dụng để đồng bộ hóa tín hiệu và bù đắp cho các sai lệch về thời gian hoặc độ trễ nhỏ trong quá trình truyền để quyết định **Sample Point**. 
+    - **PS1** là đoạn thời gian trước điểm lấy mẫu. Đoạn này cho phép node điều chỉnh thời gian đọc tín hiệu để đồng bộ với tín hiệu thực tế trên bus, đảm bảo Sample Point nằm trong khoảng tín hiệu ổn định.
+    - **PS2** là đoạn thời gian sau điểm lấy mẫu. Nó có thể được kéo dài hoặc thu ngắn để bù trừ sự sai lệch nhỏ giữa các node, giữ cho tất cả node đồng bộ với nhau. Đây là đoạn để kết thúc 1 bit và sẵn sàng để truyền/nhận bit tiếp theo.
+
+**Điểm lấy mẫu (Sample Point):**
+Là thời điểm mà tín hiệu trên bus CAN được đọc để xác định giá trị của một bit (dominant hoặc recessive). Mẫu thường được lấy ở vị trí cuối mỗi bit để đảm bảo tín hiệu đã ổn định.
+- Vị trí của điểm mẫu (sample point) được tính toán dựa trên tỷ lệ phần trăm trong một khoảng thời gian bit. Điểm mẫu lý tưởng thường nằm ở khoảng **75% đến 90%** thời gian của một bit.
+
+Vậy, tổng thời gian của một bit trong giao thức CAN là tổng của các phân đoạn thời gian (Sync Segment, Propagation Segment, PS1, và PS2), tính bằng TQ:  
+```Bit Time = Sync Segment + Propagation Segment + PS1 + PS2 (TQ)```  
+Và tốc độ baud (bit rate) được tính như sau:  
+```Tốc độ baud = 1/Bit Time (bps)```
+
+### Cơ chế bộ lọc
+
+Trong CAN, các node có thể nhận rất nhiều thông điệp, nhưng không phải tất cả thông điệp đều liên quan đến tất cả các node. Bộ lọc CAN cho phép các node lựa chọn và chỉ nhận những thông điệp cần thiết, dựa trên **ID** của thông điệp hoặc các tiêu chí khác.
+
+**Vai trò của bộ lọc CAN:**
+- Lựa chọn thông điệp: Bộ lọc CAN giúp các node lọc ra những thông điệp cần thiết và bỏ qua những thông điệp không liên quan. Điều này giúp giảm tải cho vi điều khiển, vì nó chỉ xử lý những dữ liệu mà nó cần.
+- Giảm băng thông: Bằng cách chỉ nhận những thông điệp có ID cụ thể, node có thể giảm khối lượng dữ liệu cần xử lý, giúp mạng hoạt động hiệu quả hơn.
+
+Bộ lọc CAN hoạt động dựa trên hai thành phần chính:
+- **Mask (Mặt nạ):** là một dãy bit mà các bit có giá trị **1 sẽ được kiểm tra**, còn các bit có giá trị **0 sẽ bị bỏ qua**. Điều này cho phép chỉ định cụ thể những phần của ID thông điệp mà node sẽ quan tâm, trong khi bỏ qua các phần không quan trọng. Mask giúp xác định phạm vi ID mà node quan tâm.
+
+- **Filter (Bộ lọc):** Các bit được phép kiểm tra thông qua Mask sẽ được so sánh với Filter. Nếu ID thông điệp trùng khớp với giá trị của bộ lọc (sau khi áp dụng mask), thông điệp sẽ được chấp nhận. Nếu không trùng khớp, thông điệp sẽ bị bỏ qua, node sẽ không xử lý nó.
+
+#### Ví dụ:
+Một Node cần nhận thông điệp có ID trong khoảng từ 0x100 (001 0000 0000) đến 0x1FF(001 1111 1111) và không quan tâm đến các thông điệp có ID nằm ngoài phạm vi này.  
+Để đạt được điều này, chúng ta có thể cấu hình bộ lọc CAN như sau:  
+- Mask 0x700 (111 0000 0000) có nghĩa là chỉ có 3 bit đầu tiên của ID thông điệp sẽ được so sánh với filter. Các bit khác (bit từ 8 trở xuống) sẽ không được kiểm tra. Các gói tin sau khi qua mặt nạ sẽ là xxx 0000 0000
+- Filter 0x100 (001 0000 0000), sau đó dùng phép trừ, nếu bằng 0 có nghĩa là node sẽ chấp nhận những thông điệp có 3 bit đầu tiên là 001, tức là thông điệp có ID nằm trong khoảng từ 0x100 đến 0x1FF.
+
+### Các phiên bản của CAN
+
+Giao thức CAN đã phát triển qua nhiều phiên bản để đáp ứng nhu cầu ngày càng cao trong các ứng dụng nhúng, đặc biệt là trong ngành công nghiệp ô tô và tự động hóa. Các phiên bản mở rộng của CAN bao gồm CAN 2.0A, CAN 2.0B, và CAN FD (Flexible Data-rate). Mỗi phiên bản có những cải tiến để hỗ trợ các yêu cầu khác nhau về độ ưu tiên, dung lượng dữ liệu và tốc độ truyền tải.
+
+#### CAN 2.0A
+- 11-bit identifier (ID): Phiên bản CAN 2.0A sử dụng định dạng ID dài 11 bit. Đây là một trong những yếu tố quan trọng để xác định mức độ ưu tiên của thông điệp trong quá trình truyền dữ liệu. Với 11 bit, có thể biểu diễn 2^11 = 2048 ID khác nhau.
+- Khả năng ưu tiên: Mỗi thông điệp trong mạng CAN đều có một ID xác định mức độ ưu tiên của nó. ID càng thấp, mức độ ưu tiên càng cao.
+- Truyền dữ liệu: Dữ liệu có thể truyền đi qua bus CAN với kích thước tối đa là 8 byte mỗi khung. Điều này là đặc trưng của CAN 2.0A, giúp quản lý hiệu quả băng thông và độ trễ.
+
+#### CAN 2.0B (Extended CAN)
+
+- 29-bit identifier (ID): Phiên bản CAN 2.0B mở rộng định dạng ID từ 11 bit trong CAN 2.0A lên 29 bit. Với 29 bit, có thể biểu diễn 2^29 ID khác nhau, cho phép phân bổ số lượng ID lớn hơn và hỗ trợ các hệ thống phức tạp với nhiều node hơn.
+- Tương thích ngược: CAN 2.0B vẫn tương thích ngược với CAN 2.0A, có nghĩa là các node sử dụng CAN 2.0B có thể hiểu được và giao tiếp với các node sử dụng CAN 2.0A. - Các node CAN 2.0B có thể nhận diện giữa các khung dữ liệu tiêu chuẩn và khung dữ liệu mở rộng thông qua bit điều khiển IDE (Identifier Extension).
+- Khả năng truyền dữ liệu: Giống như CAN 2.0A, CAN 2.0B cũng giới hạn khung dữ liệu tối đa là 8 byte, nhưng sự khác biệt chính nằm ở số lượng ID có thể được sử dụng để định danh các thiết bị trên mạng.
+
+![](https://i.imgur.com/mU3tMT6.png)
+
+- **Start of Frame (SOF)**: Đây là một bit duy nhất đánh dấu bắt đầu của một frame.
+- **Identifier (ID)**: 29-bit được chia thành hai phần:
+    - **Base ID:** 11-bit giống như trong Standard Frame.
+    - **Extended ID:** 18-bit mở rộng để cung cấp tổng cộng 29-bit nhận dạng.
+- **Remote Transmission Request (RTR):** Bit này chỉ định liệu frame là một Data Frame hay Remote Frame.
+    - RTR = 0: Đây là Data Frame.
+    - RTR = 1: Đây là Remote Frame (yêu cầu dữ liệu từ một node khác).
+- **Identifier Extension (IDE):** Bit này phân biệt giữa Standard Frame (IDE = 0) và Extended Frame (IDE = 1).
+- **Reserved Bit (r0, r1):** Những bit dự phòng để phục vụ cho các phiên bản tương lai của chuẩn CAN.
+- **Data Length Code (DLC):** 4-bit chỉ định số lượng byte dữ liệu trong Data Field (từ 0 đến 8 byte).
+- **Data Field:** Chứa dữ liệu thực tế mà bạn muốn truyền. Độ dài từ 0 đến 8 byte (mỗi byte 8-bit).
+- **Cyclic Redundancy Check (CRC):** Trường này chứa 15-bit CRC và 1-bit CRC Delimiter. CRC được dùng để kiểm tra lỗi trong frame.
+- **ACK Slot**: 1-bit dành cho node nhận phát tín hiệu xác nhận (ACK) nếu frame được nhận mà không có lỗi.
+- **End of Frame (EOF):** Kết thúc frame, gồm 7 bit liên tiếp có giá trị "1".
+- **Intermission Frame Space (IFS):** 3-bit dành cho thời gian nghỉ giữa hai frame truyền liên tiếp.
+
+#### CAN FD (Flexible Data-rate)
+
+CAN FD là một phiên bản cải tiến của giao thức CAN tiêu chuẩn, được phát triển để giải quyết các hạn chế về tốc độ truyền dữ liệu và kích thước khung dữ liệu trong các phiên bản trước đó. CAN FD là viết tắt của Flexible Data-rate, tức là tốc độ dữ liệu linh hoạt, và có những cải tiến lớn so với CAN 2.0A và 2.0B.
+
+Đặc điểm chính của CAN FD:
+- Truyền dữ liệu với tốc độ cao hơn: CAN FD cho phép tốc độ truyền dữ liệu nhanh hơn nhiều so với CAN tiêu chuẩn, với **tốc độ có thể lên tới 8 Mbps** trong giai đoạn truyền dữ liệu (Data Phase). Trong CAN tiêu chuẩn, tốc độ truyền tối đa bị giới hạn ở 1 Mbps.
+- Kích thước khung dữ liệu lớn hơn: Trong khi CAN tiêu chuẩn chỉ hỗ trợ tối đa 8 byte dữ liệu trong mỗi khung, CAN FD có thể **truyền tới 64 byte** dữ liệu trong một khung. Điều này giúp giảm số lượng khung cần thiết để truyền một lượng lớn dữ liệu, từ đó giảm độ trễ và tăng hiệu suất.
+- Tốc độ truyền linh hoạt: CAN FD sử dụng hai tốc độ truyền khác nhau trong cùng một khung: một tốc độ chậm hơn cho Arbitration Phase (giai đoạn tranh chấp quyền gửi), và một tốc độ nhanh hơn cho Data Phase (giai đoạn truyền dữ liệu). Điều này giúp đảm bảo tính tương thích và hiệu quả của hệ thống.
+- Tương thích ngược: CAN FD vẫn giữ được khả năng tương thích ngược với các phiên bản CAN cũ như CAN 2.0A và CAN 2.0B, giúp các hệ thống sử dụng cả CAN tiêu chuẩn và CAN FD có thể hoạt động song song.
+
+
+
+
+</details>
+
