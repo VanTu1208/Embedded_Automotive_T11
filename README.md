@@ -2413,3 +2413,64 @@ CAN FD là một phiên bản cải tiến của giao thức CAN tiêu chuẩn, 
 
 </details>
 
+
+## Bài 13: LIN
+
+<details><summary>Xem</summary>  
+
+LIN (Local Interconnect Network) là một giao thức phụ trong Ô tô, sinh ra nhằm mục đích giảm thiểu sự phức tạp và chi phí trong việc truyền thông giữa các thiết bị điện tử đơn giản trong xe
+
+LIN thường được sử dụng trong các ứng dụng điều khiển chức năng không an toàn của xe như điều khiển cửa sổ, đèn, gương,...
+
+![](https://i.imgur.com/mFWatV5.png)
+
+Trên xe ô tô, có sự kết hợp của CAN và LIN, các hệ thống phụ sử dụng LIN sẽ không trực tiếp giao tiếp với nhau mà sẽ trao đổi thông qua CAN, mỗi hệ thống LIN sẽ có một LIN master để kết nối vào CAN bus.
+
+### Các đặc điểm của LIN
+
+![](https://i.imgur.com/9KYCGdH.png)
+
+- LIN hoạt động theo mô hình Master - Slave
+- Slave chỉ phản hồi khi có yêu cầu từ Master
+- LIN master node sẽ quét và gửi yêu cầu liên tục đến tất cả các LIN slave nodes để đọc thông tin từ Slave, nếu có thì Slave sẽ trả về, không thì bỏ qua
+- Sau đó Master sẽ gửi dữ liệu lên CAN bus để truyền đến các hệ thống LIN khác để thực thi
+- LIN sử dụng giao thức UART để truyền/nhận dữ liệu với khung truyền **1 start bit - 8 data bits - 1 stop bit**
+- LIN hoạt động ở hai mức là **0 và 12V**
+
+![](https://i.imgur.com/g096nDr.png)
+
+### Cấu trúc mỗi node
+
+![](https://i.imgur.com/K47tyIC.png)
+
+**Chức năng các chân của TJA1028**
+- TXD (Transmit Data): Chân đầu vào dữ liệu truyền từ bộ vi điều khiển.
+- RXD (Receive Data): Chân đầu ra dữ liệu nhận từ bus LIN đến bộ vi điều khiển.
+- LIN: Chân kết nối với đường truyền bus LIN.
+- VBAT: Chân cấp nguồn cho module LIN từ nguồn cung cấp chính (thường là pin xe hơi,Vecu = 12V).
+- GND: Chân nối đất (ground).
+- EN (Enable): Chân cho phép kích hoạt bộ transceiver.
+- INH (Inhibit): Chân điều khiển bật/tắt nguồn ngoại vi, dùng để bật hoặc tắt thiết bị hoặc mạch khác.
+- WAKE: Chân cho phép đánh thức hệ thống từ chế độ ngủ (sleep mode).
+### Khung truyền của LIN
+
+![](https://i.imgur.com/hA22a9s.png)
+
+**Header** là gói tin được gửi từ Master (có ba dạng TX, RX và ignore) và **Response** được gửi từ Slave hoặc Master tùy thuộc vào kiểu của Header
+
+- Header
+    - Break: Master gửi 14 bits giống nhau để bắt đầu khung dữ liệu
+    - Sync: 8 bit để đồng bộ hóa (0x55 = 01010101). Master sẽ gửi 8 bit tượng trưng cho xung Clock, các Slave sẽ đọc và điều chỉnh tốc độ xung theo tốc độ của Master
+    - ID: 6 bit ID + 2 bit parity(một bit kiểm tra chẵn, một bit kiểm tra lẻ). Xác định loại dữ liệu và Slave cần phản hồi.
+- Response: Nếu gói Header là TX thì Response được gửi từ Master đến Slave. Nếu gói là RX thì Slave sẽ gửi gói tin đến Master.
+    - Data: 16 - 64 bits tức 2 - 8 bytes dữ liệu chứa nội dung thông điệp truyền đi
+    - Checksum: 8 bits để phát hiện lỗi trong quá trình truyền.
+
+
+### Quá trình truyền
+- Master sẽ gửi Header cho các Slave trước.
+    - Nếu Master yêu cầu dữ liệu từ Slave, thì Slave sẽ gửi lại Response cho Master.
+    - Nếu Master muốn gửi dữ liệu cho Slave, thì sẽ gửi kèm Response cho Slave.
+- Slave sẽ kiểm tra ID có khớp với mình không, nếu có thì xử lý, nếu không thì bỏ qua.
+
+</details>
