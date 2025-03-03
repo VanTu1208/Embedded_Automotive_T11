@@ -2474,3 +2474,305 @@ Trên xe ô tô, có sự kết hợp của CAN và LIN, các hệ thống phụ
 - Slave sẽ kiểm tra ID có khớp với mình không, nếu có thì xử lý, nếu không thì bỏ qua.
 
 </details>
+
+
+
+
+## AUTOSAR Classic
+
+<details><summary>Xem</summary>  
+
+
+**AUTOSAR** (**AUT**omotive **O**pen **S**ystem **AR**chitecture) là một tiêu chuẩn toàn cầu cho phát triển phần mềm ô tô với mục tiêu là chuẩn hóa kiến trúc phần mềm cho các hệ thống điều khiển điện tử (ECU) trong ô tô, nhằm tăng tính khả chuyển, khả mở rộng và giảm chi phí phát triển.
+
+![Architechure](https://i.imgur.com/Cd7S24G.png)
+
+Các Task sẽ chạy song song với nhau và trong một thời điểm chỉ có 1 task được thực thi để tránh việc làm sai xót dữ liệu, tất cả các Task được quản lý thông qua hệ điều hành (Operating System).
+
+**So sánh**
+![Sosanh](https://i.imgur.com/FwJT071.png)
+
+- Các Task được viết song song nên có sự đồng nhất và khả năng tái sử dụng cao. Đồng thời việc bảo trì cũng dễ dàng hơn so với việc chương trình hoạt động tuần tự vì các Task được cấu hình riêng biệt.
+
+### Kiến trúc AUTOSAR
+
+Được chia làm 4 tầng
+- **Application Layer**: Bao gồm các thành phần phần mềm ứng dụng, thực hiện các chức năng cụ thể của xe (như kiểm soát động cơ, phanh, v.v).
+- **Runtime Environment(RTE)**: Là lớp trung gian giữa phần mềm ứng dụng và phần mềm cơ bản, giúp phần mềm ứng dụng có thể giao tiếp với nhau một cách chuẩn hóa (liên kết SWC và BSW).
+- **Basic Software (BSW)**: Là phần mềm cơ bản, bao gồm các thành phần phần mềm tiêu chuẩn để quản lý các chức năng hệ thống, giao tiếp và điều khiển phần cứng.
+- **Microcontroller** 
+
+#### Application Layer
+
+Bao gồm nhiều khối phần mềm ứng dụng (Software Component - SWC). **Mỗi SWC thực hiện 1 chức năng cụ thể** trong hệ thống ECU. Ví dụ: điều khiển động cơ, phanh, túi khí,...
+
+![anh](https://i.imgur.com/ECiUKwP.png)
+
+SWC chỉ quan tâm đến **logic** (tính toán số học, khởi động thế nào), không cần quan tâm đến phần cứng. Tuy nhiên, SWC vẫn có thể giao tiếp với nhau và giao tiếp với phần cứng thông qua RTE.
+
+#### Runtime Environment(RTE)
+
+RTE đóng vai trò trung gian, quan trọng trong việc kết nối các Software Components (SWC) trền tâng Application Layer và Basic Software (BSW) thông qua một kiến trúc trừu tượng.
+
+Chức năng:
+- **Truyền thông tin giữa các SWCs**: RTE cung cấp cơ chế truyền thông để các thành phần phần mềm (SWCs) có thể trao đổi dữ liệu hoặc gọi dịch vụ với nhau mà không cần biết chi tiết về các phần còn lại của hệ thống. 
+- **Kết nối SWCs với BSW**: RTE cung cấp giao diện để các SWCs có thể tương tác với BSW. Điều này giúp các SWCs có thể sử dụng các dịch vụ hoặc điều khiển phần cứng một cách dễ dàng.
+- Hỗ trợ việc lập lịch và điều phối thực thi của các SWCs theo các sự kiện hoặc chu kỳ định sẵn. 
+
+#### Basic Software
+Basic Software (BSW) là một trong ba thành phần chính của kiến trúc AUTOSAR, đóng vai trò nền tảng để hỗ trợ phần mềm ứng dụng (SWC) hoạt động trên phần cứng. BSW cung cấp các dịch vụ cơ bản như quản lý phần cứng, giao tiếp, chẩn đoán, và các dịch vụ hệ thống.
+
+BSW được chia thành 3 tầng:
+- Service Layer.
+- ECU Abstraction Layer.
+- Microcontroller Abstraction Layer - MCAL.
+
+**Service Layer**:
+Đây là lớp cao nhất trong BSW, cung cấp các dịch vụ hệ thống và tiện ích cho các phần mềm ứng dụng (SWC) và các lớp khác của BSW.
+Là nơi **lưu trữ hệ điều hành của hệ thống tại lớp (System Services)**. Các dịch vụ khác bao gồm quản lý thời gian thực, chẩn đoán, quản lý lỗi, quản lý nguồn, bộ nhớ v.v.
+
+**ECU Abstraction Layer**:
+Lớp này cung cấp một giao diện trừu tượng cho tất cả các thiết bị ngoại vi và phần cứng cụ thể của ECU. Nó ẩn đi sự khác biệt về phần cứng của các thiết bị ngoại vi khác nhau và cung cấp một giao diện tiêu chuẩn cho các lớp bên trên (Service Layer và SWC). **Là nơi giao tiếp BSW với tầng Application thông qua RTE**
+
+**MCAL (Microcontroller Abstraction Layer):**
+Đây là lớp thấp nhất trong BSW, cung cấp giao diện trừu tượng để tương tác trực tiếp với các thành phần phần cứng của vi điều khiển, chẳng hạn như bộ xử lý trung tâm (CPU), các thiết bị ngoại vi tích hợp (như ADC, PWM, UART), và các bộ định thời (timer).
+
+Với mỗi dòng vi điều khiển khác nhau, MCAL sẽ là khác nhau nhưng các lớp ở trên như Application Layer, RTE,... sẽ được giống nhau. Vì thế khi muốn chuyển hệ thống sang một hệ thống khác, ta chỉ cần thay đổi MCAL phù hợp với chức năng phần cứng vi điều khiển mới.
+
+Vì thế, để các lớp bên trên có thể kết nối được với MCAL, chúng ta cần phải có một quy chuẩn chung để cấu hình các chức năng phần cứng bên trong MCAL.
+
+### MCAL 
+    
+
+#### DIO Driver
+<details><summary>Xem</summary>  
+**Cấu hình chân**:
+- Các chân trong STM32 được gọi là GPIO nhưng với MCAL, tổng quát cho tất cả vi điều kiển, chúng được gọi là **DIO Channels**.
+- Tương tự với port thì được gọi là **DIO Ports**.
+- **DIO Channels Groups** là một nhóm các chân không xác định
+
+**Imported types**: Những kiểu dữ liệu cần phải thêm vào để viết Driver, gồm:
+![](https://i.imgur.com/HBAwd7x.png)
+
+- File header: Std_Types.h là file chứa các định nghĩa, các kiểu dữ liệu được cấu hình riêng cho vi điều khiển
+- Một vài kiểu dữ liệu được cung cấp như:
+    - **Std_ReturnType**
+    ```cpp
+    typedef uint8_t Std_ReturnType;
+
+    #define E_OK        0x00U   /**< Thao tác thành công */
+    #define E_NOT_OK    0x01U   /**< Thao tác thất bại */
+
+    ```
+    Ngoài ra, một vài định nghĩa khác như:
+    ```cpp 
+    /* ============================================= */
+    /*           Logical State Definitions          */
+    /* ============================================= */
+
+    /**
+    * @brief Định nghĩa các trạng thái logic cao và thấp
+    * @details Được sử dụng cho các tín hiệu đầu vào/đầu ra.
+    */
+    #define STD_HIGH    0x01U   /**< Trạng thái logic cao */
+    #define STD_LOW     0x00U   /**< Trạng thái logic thấp */
+    /* ============================================= */
+    /*            Null Pointer Definition            */
+    /* ============================================= */
+
+    /**
+    * @brief Định nghĩa con trỏ NULL
+    * @details Con trỏ NULL là con trỏ trỏ đến địa chỉ 0.
+    */
+
+    #ifndef NULL_PTR
+        #define NULL_PTR ((void*)0)   /**< Định nghĩa con trỏ NULL */
+    #endif
+    /* ============================================= */
+    /*         Platform Independent Data Types       */
+    /* ============================================= */
+
+    /**
+    * @brief Các kiểu dữ liệu độc lập với nền tảng
+    * @details Định nghĩa rõ ràng về kích thước và dấu của các kiểu dữ liệu
+    */
+    typedef unsigned char      uint8;   /**< Số nguyên không dấu 8-bit */
+    typedef signed char        sint8;   /**< Số nguyên có dấu 8-bit */
+
+    typedef unsigned short     uint16;  /**< Số nguyên không dấu 16-bit */
+    typedef signed short       sint16;  /**< Số nguyên có dấu 16-bit */
+
+    typedef unsigned long      uint32;  /**< Số nguyên không dấu 32-bit */
+    typedef signed long        sint32;  /**< Số nguyên có dấu 32-bit */
+
+    typedef unsigned long long uint64;  /**< Số nguyên không dấu 64-bit */
+    typedef signed long long   sint64;  /**< Số nguyên có dấu 64-bit */
+
+    typedef float              float32; /**< Kiểu số thực 32-bit */
+    typedef double             float64; /**< Kiểu số thực 64-bit */
+
+    ```
+
+    Std_returnType sẽ định nghĩa lại các kiểu dữ liệu từ những nguồn gốc như uint8_t, uint16_t... thành những kiểu phù hợp với tiêu chuẩn AUTOSAR và làm cho chương trình được sắp xếp để dễ dàng xử lý.
+    
+    -  **Std_VersionInfoType**
+    Lưu trữ dữ liệu của phiên bản phần mềm hiện tại của Module
+
+#### Type Definitions:
+
+- **```Dio_ChannelType```**
+
+![](https://i.imgur.com/dmGLmuT.png)
+
+```Dio_ChannelType``` là một kiểu dữ liệu được cấu hình từ gốc uint có chức năng đánh số ID cho từng chân (channel) trên vi điều khiển
+
+Ví dụ trên STM32, các chân được phân biệt theo 2 tiêu chí Port - Pin Number như chân A0 được gọi là PA0, chân B 13 được gọi là PB13. Nhưng đối với AUTOSAR chỉ được phân biệt bởi một thuộc tinh là ID.  
+Ví dụ với STM32, Các chân PA0 - PA15 sẽ được đánh số từ 0 - 15, tiếp theo đó các số từ PB0 - PB15 được đánh số từ 16 - 31.
+
+Các vi điều khiển khác nhau sẽ có một kiểu định nghĩa chân khác nhau và MCAL sẽ là chuẩn chung có thể định nghĩa lại các chân đó theo kiểu dữ liệu chuẩn của AUTOSAR để cung cấp cho các lớp trên
+
+- **```Dio_PortType```**
+
+![](https://i.imgur.com/xOB8DBv.png)
+
+Tương tự với ```Dio_ChannelType``` thì ```Dio_PortType``` cũng là một kiểu dữ liệu dạng số để xác định ID của các Port
+
+Với STM32 sẽ là A, B, C, D và AUTOSAR sẽ định nghĩa lại là 0, 1, 2, 3...
+
+
+- **```Dio_ChannelGroupType```**
+
+![](https://i.imgur.com/FgbrS5y.png)
+
+
+- ```Dio_ChannelGroupType``` là một Struct để xác định một nhóm các chân của vi điều khiển, gồm ba thuộc tính
+    - ```mask``` có kiểu uint8/16/32 dùng để xác định vị trí của ChannelGroup
+    - ```offset```: kiểu dữ liệu unit8, Độ dời tính từ vị trí gốc Channel 0 của Port
+        - Ví dụ: Nếu group là A3 A4 A5 A6 thì độ dời là 3
+    - ```port``` nhóm này nằm ở port nào kiểu Dio_PortType
+
+- **```Dio_LevelType```** 
+
+
+![](https://i.imgur.com/vPMJksj.png)
+![](https://i.imgur.com/793LYDn.png)
+
+```Dio_LevelType``` là một kiểu dữ liệu có gốc uint8 dùng để xác định mức điện áp của một Channel, có thể là INPUT hoặc OUTPUT
+
+- ```STD_LOW``` tương ứng với 0V
+- ```STD_HIGH``` tương ứng với 3.3V hoặc 5V
+
+
+- **```Dio_PortLevelType```** 
+
+![](https://i.imgur.com/TSChfwl.png)
+
+là một kiểu dữ liệu có gốc là uint, chứa 16 hoặc 32bit dữ liệu để hiển thị mức logic của các chân trong một Port
+
+
+
+#### Function Definitions
+
+#### **```Dio_ReadChannel```**
+
+![](https://i.imgur.com/FAuRRYm.png)
+
+- Chức năng: Đọc tín hiệu điện áp của một Channel
+- Cú pháp
+    ```
+    Dio_LevelType Dio_ReadChannel(Dio_ChannelType ChannelId)
+    ```
+- Kiểu trả về: Dio_LevelType là STD_HIGH hoặc STD_LOW
+- Tham số truyền vào: ```Dio_ChannelType ChannelId``` là Id của Channel muốn đọc điện áp
+
+Với ChannelId được truyền vào, chúng ta sẽ phân tích và biển đổi thành Port và Pin để MCU hiểu và gọi những Function hoặc sử dụng thanh ghi để đọc giá trị điện áp và trả về.
+
+
+#### **```Dio_WriteChannel```**
+
+
+![](https://i.imgur.com/SFrLzQq.png)
+
+- Chức năng: Đặt mức điện áp cho một Channel
+- Cú pháp
+    ```
+    void Dio_WriteChannel (Dio_ChannelType ChannelId,Dio_LevelType Level)
+    ```
+- Tham số truyền vào:
+    - ```Dio_ChannelType ChannelId```: Channel cần điều khiển
+    - ```Dio_LevelType Level```: Mức điện áp để đặt cho Channel đó
+- Không có giá trị trả về.
+
+#### **```Dio_ReadPort```**
+
+![](https://i.imgur.com/r067VIJ.png)
+
+- Chức năng: Đọc tín hiệu của tất cả Channel có trong Port
+- Cú pháp
+    ```
+    Dio_PortLevelType Dio_ReadPort (Dio_PortType PortId)
+    ```
+- Tham số truyền vào ```Dio_PortType PortId```: Port cần đọc giá trị
+- Kiểu trả về: ```Dio_PortLevelType``` là 16/32 bit tương ứng với giá trị từng Channel của port.
+
+#### **```Dio_WritePort```**
+
+![](https://i.imgur.com/xEpMvWj.png)
+
+- Chức năng: Ghi giá trị điện áp cho các chân của một Port
+- Cú pháp 
+    ```
+    void Dio_WritePort (Dio_PortType PortId, Dio_PortLevelType Level)
+    ```
+- Tham số truyền vào: 
+    - ```Dio_PortType PortId```: Port của vi điều khiển
+    - ```Dio_PortLevelType Level```: Giá trị uint để cấu hình cho Port.
+
+- Không có dữ liệu trả về.
+
+#### **```Dio_ReadChannelGroup```**
+
+![](https://i.imgur.com/TlsFSxW.png)
+
+- Chức năng: Đọc giá trị điện áp của một GroupChannel
+- Cú pháp:
+    ```
+    Dio_PortLevelType Dio_ReadChannelGroup (
+    const Dio_ChannelGroupType* ChannelGroupIdPtr
+    )
+    ```
+- Tham số truyền vào là một Struct chứa các thuộc tính mask, offset, Port của ChannelGroup
+- Trả về giá trị thuộc kiểu dữ liệu ```Dio_PortLevelType```
+
+#### **```Dio_WriteChannelGroup```**
+
+![](https://i.imgur.com/5LTGqff.png)
+
+- Chức năng: Ghi mức điện áp vào các chân của ChannelGroup
+- Gồm hai tham số là GroupChannel và Level của Channel đó
+- Không có kiểu trả về
+
+#### **```Dio_GetVersionInfo```**
+
+![](https://i.imgur.com/fbfUxZC.png)
+
+- Chức năng: Lấy thông tin phiên bản hiện tại của hệ thống
+- Gán các giá trị phiên bản hiện tại vào Struct Std_VersionInfoType
+- Không có kiểu dữ liệu trả về.
+
+#### **```Dio_FlipChannel```** 
+
+![](https://i.imgur.com/biUkHy7.png)
+![](https://i.imgur.com/4sfQphE.png)
+
+- Chức năng: Lật mức điện áp tại 1 Channel
+- Trả về mức điện áp của chân vừa đảo
+
+
+</details>
+
+
+
+
+</details>
+
