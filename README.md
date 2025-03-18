@@ -2541,10 +2541,11 @@ Với mỗi dòng vi điều khiển khác nhau, MCAL sẽ là khác nhau nhưng
 
 Vì thế, để các lớp bên trên có thể kết nối được với MCAL, chúng ta cần phải có một quy chuẩn chung để cấu hình các chức năng phần cứng bên trong MCAL.
 
-### MCAL 
-    
+</details>
 
-#### DIO Driver
+## MCAL 
+
+### DIO Driver
 <details><summary>Xem</summary>  
 **Cấu hình chân**:
 - Các chân trong STM32 được gọi là GPIO nhưng với MCAL, tổng quát cho tất cả vi điều kiển, chúng được gọi là **DIO Channels**.
@@ -2618,7 +2619,7 @@ Vì thế, để các lớp bên trên có thể kết nối được với MCAL
     -  **Std_VersionInfoType**
     Lưu trữ dữ liệu của phiên bản phần mềm hiện tại của Module
 
-#### Type Definitions:
+### Type Definitions:
 
 - **```Dio_ChannelType```**
 
@@ -2671,7 +2672,7 @@ là một kiểu dữ liệu có gốc là uint, chứa 16 hoặc 32bit dữ li�
 
 
 
-#### Function Definitions
+### Function Definitions
 
 #### **```Dio_ReadChannel```**
 
@@ -2767,11 +2768,6 @@ Với ChannelId được truyền vào, chúng ta sẽ phân tích và biển đ
 
 - Chức năng: Lật mức điện áp tại 1 Channel
 - Trả về mức điện áp của chân vừa đảo
-
-
-</details>
-
-
 
 
 </details>
