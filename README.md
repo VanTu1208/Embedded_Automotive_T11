@@ -2772,3 +2772,349 @@ Với ChannelId được truyền vào, chúng ta sẽ phân tích và biển đ
 
 </details>
 
+### SPI Handle/Driver
+
+<details><summary>Xem</summary>  
+
+Chức năng tạo ra một lớp trừu tượng để ECU Abstraction layer có thể giao tiếp với phần cứng SPI của Microcontroller.
+
+Tiêu chuẩn xác định SPI Channels sẽ là mỗi kênh sẽ được đánh một ID riêng và sẽ nối tiếp nhau. 
+
+Ví dụ: 
+``` 
+Bộ SPI1, kênh 1 sẽ là Channel 0
+Bộ SPI1, kênh 2 sẽ là Channel 1
+Bộ SPI2, kênh 1 sẽ là Channel 2
+...
+
+```
+Với STM32F1, mỗi bộ SPI chỉ có một kênh. Vì thế
+```
+SPI1 sẽ là Channel 0
+SPI2 sẽ là Channel 1
+```
+
+Trong mỗi bộ SPI sẽ có hai đối tượng để chứa dữ liệu truyền/nhận
+- **IB (Internal Buffer):** Bộ đệm bên trong, bộ nhớ chính để truyền nhận dữ liệu
+- **EB (External Buffer):** Nếu IB không đủ thì sẽ khởi tạo thêm EB để hổ trợ truyền nhận (Chủ yếu nằm trong RAM)
+
+**SPI Jobs:** là một tác vụ mà phần cứng SPI thực hiện  
+**SPI Sequence:** là một chuỗi các Jobs mà SPI thực hiện theo một thứ tự nhất định.
+
+
+### API Specification
+
+#### Import Type
+![](https://i.imgur.com/Y1LkLaC.png)
+ 
+Tương tự với DIO thì SPI cũng sẽ thêm các thư viện trong Module Std để chứa các kiểu dữ liệu chuẩn của AUTOSAR
+
+Thêm vào đó sẽ có Module mới là Dem - một module trong AUTOSAR dùng để quản lý sự kiện chẩn đoán (diagnostic events), giúp giám sát và lưu trữ lỗi xảy ra trong hệ thống.
+
+Trong đó, 
+- ```Dem_EventIdType```: Kiểu dữ liệu đại diện cho ID của một sự kiện chẩn đoán (Diagnostic Event ID). Mỗi lỗi hoặc sự kiện có một ID duy nhất để nhận diện trong hệ thống.
+- ```Dem_EventStatusType```: Kiểu dữ liệu đại diện cho trạng thái của một sự kiện chẩn đoán (ví dụ: lỗi đang xảy ra, lỗi đã được xác nhận, lỗi đã được xóa, v.v.).
+    - Thường có các giá trị như ```DEM_EVENT_STATUS_PASSED, DEM_EVENT_STATUS_FAILED```.
+
+
+#### Type Definitions
+
+**```SPI_ConfigType```**
+- Kiểu dữ liệu: Structure
+- Chức năng: Chứa các thông số cần thiết để cài đặt cho bộ SPI như BaudRate, Mode,...
+    ```
+    typedef struct {
+        Spi_ChannelType Channel;   /**< Kênh SPI (bắt buộc) */
+        Spi_JobType Job;           /**< Job SPI (bắt buộc) */
+        Spi_SequenceType Sequence; /**< Sequence SPI (bắt buộc) */
+
+        /* Các thông số sau là tùy chọn, có thể để giá trị mặc định */
+        Spi_BaudRateType BaudRate;    /**< Tốc độ Baud-rate (tùy chọn, mặc định 1-MHz) */
+        Spi_ClockPolarityType CPOL;   /**< Cực tính Clock (tùy chọn, mặc định CPOL=0) */
+        Spi_ClockPhaseType CPHA;      /**< Pha Clock (tùy chọn, mặc định CPHA=0) */
+        Spi_ModeType Mode;            /**< Chế độ SPI (tùy chọn, mặc định Master) */
+        Spi_NSSManagementType NSS;    /**< Quản lý NSS (tùy chọn, mặc định phần mềm) */
+        Spi_DataSizeType DataSize;    /**< Kích thước dữ liệu (tùy chọn, mặc định 8-bit) */
+    } Spi_ConfigType;
+    ```
+
+**```SPI_StatusType```**
+- Kiểu dữ liệu: Enumeration
+- Chức năng: Chứa trạng thái của SPI
+
+```
+typedef enum {
+    SPI_UNINIT = 0x00, //SPI chưa được khởi tạo
+    SPI_IDLE = 0x01,   //SPI đang rảnh
+    SPI_BUSY = 0x02    // SPI đang bận 
+} Spi_StatusType;
+```
+
+**```SPI_JobResultType```**
+- Kiểu dữ liệu: Enumeration
+- Chức năng: Chứa trạng thái của Job đang thực hiện
+
+```
+typedef enum {
+    SPI_JOB_OK = 0x00,      //Job đã hoàn thành
+    SPI_JOB_PENDING = 0x01, //Job đang thực hiện
+    SPI_JOB_FAILED = 0x02,  // Job thực hiện thất bại
+    SPI_JOB_QUEUED = 0x03   // Job đang chờ thực hiện 
+} SPI_JobResultType;
+```
+
+**```SPI_SeqResultType```**
+- Kiểu dữ liệu: Enumeration
+- Chức năng: Chứa trạng thái của Job đang thực hiện
+
+```
+typedef enum {
+    SPI_SEQ_OK = 0x00,      //Sequence đã hoàn thành
+    SPI_SEQ_PENDING = 0x01, //Sequence đang thực hiện
+    SPI_SEQ_FAILED = 0x02,  //Sequence thực hiện thất bại
+    SPI_SEQ_CANCELED = 0x03 //Sequence đã bị hủy
+} SPI_SeqResultType;
+```
+
+
+**```SPI_DataBufferType```**
+- Chức năng: Kiểu dữ liệu đại hiện cho việc xác định bộ nhớ để truyền dữ liệu đi là IB hay EB
+- Kiểu dữ liệu gốc uint8.
+
+
+
+**```SPI_NumberOfDataType```**
+- Chức năng: Xác định kích thước dữ liệu truyền nhận bởi SPI, tối đa 16 bit.
+- Kiểu dữ liệu gốc uint16.
+
+**```SPI_ChannelType```**
+- Chức năng: Phân biệt ID các kênh với nhau.
+- Kiểu dữ liệu gốc uint8.
+
+**```SPI_JobType```**
+- Chức năng: Phân biệt các Job với nhau dựa trên ID.
+- Kiểu dữ liệu gốc uint8.
+
+**```SPI_SequenceType```**
+- Chức năng: Phân biệt các Sequence với nhau dựa trên ID.
+- Kiểu dữ liệu gốc uint8.
+
+**```SPI_HWUnitType```**
+- Chức năng: Định nghĩa một đơn vị phần cứng trên vi điều khiển. Nếu có hai bộ SPI thì sẽ có hai HWUnit. Với STM32F1 thì HWUnit = ChannelType vì mỗi bộ chỉ có một kênh.
+- Kiểu dữ liệu gốc uint8.
+
+**```SPI_AsyncModeType```**
+- Chức năng: Xác định kiểu truyền trong chế độ truyền bất đồng bộ. Khi truyền dữ liệu xét theo các bit thì sẽ là đồng bộ, nhưng khi xét theo Sequence thì sẽ là bất đồng bộ
+- Kiểu dữ liệu gốc Enumeration.
+```
+typedef enum {
+    SPI_POLLING_MODE = 0x00,  //Chờ một sự kiện hoàn thành rồi mới truyền nhận SPI, như dùng trong While
+    SPI_INTERRUPT_MODE = 0x01 //Làm công việc khác, đến khi có báo ngắt thì thực hiện truyền nhận SPI //Dùng ISR
+} SPI_AsyncModeType;    
+```
+
+
+### Function Definitions
+
+**```Spi_Init```**
+
+- Cú pháp
+    ```
+    void Spi_Init (const Spi_ConfigType* ConfigPtr)
+    ```
+- Tham số: Con trỏ tới địa chỉ chứa Struct cấu hình cho SPI.
+- Chức năng: Lấy các thông số cài đặt cho SPI và gán vào địa chỉ của Struct SPI_ConfigType để cấu hình.
+- Dữ liệu trả về: void
+
+
+**```Spi_DeInit```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_DeInit (void)
+    ```
+- Tham số: void
+- Chức năng: Xóa tất cả cài đặt bên trong thanh ghi bằng cách xóa dữ liệu các thành viên của Struct (sử dụng mặc định) và tắt hoạt động của SPI.
+- Dữ liệu trả về: Std_ReturnType
+    - E_OK: Nếu xóa thành công 
+    - E_NOT_OK: Nếu không xóa thành công khi SPI chưa được khởi tạo 
+
+**```Spi_WriteIB```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_WriteIB (
+        Spi_ChannelType Channel,
+        const Spi_DataBufferType* DataBufferPtr
+    )
+
+    ```
+- Tham số: 
+    - ```Spi_ChannelType Channel```: Kênh SPI đang sử dụng
+    - ```Spi_DataBufferType* DataBufferPtr```: Địa chỉ của thanh ghi chứa dữ liệu cần ghi vào.
+- Chức năng: Ghi dữ liệu vào Internal Buffer để sẵn sàng truyền dữ liệu đi(Thành ghi DR trong STM32F1). (Ghi dữ liệu cho SPI)
+- Dữ liệu trả về: Std_ReturnType
+    - E_OK: Nếu ghi dữ liệu thành công 
+    - E_NOT_OK: Nếu ghi dữ liệu thất bại
+
+
+
+**```Spi_ReadIB```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_ReadIB (Spi_ChannelType Channel, Spi_DataBufferType* DataBufferPointer)
+
+    ```
+- Tham số: 
+    - ```Spi_ChannelType Channel```: Kênh SPI đang sử dụng
+    - ```Spi_DataBufferType* DataBufferPtr```: Địa chỉ vùng nhớ trong RAM để chứa dữ liệu đọc được từ thành ghi DR của SPI.
+- Chức năng: Đọc dữ liệu từ Internal Buffer để lưu dữ liệu vào RAM để lưu trữ (Đọc dữ liệu từ SPI)
+- Dữ liệu trả về: Std_ReturnType
+    - E_OK: Đọc dữ liệu thành công 
+    - E_NOT_OK: Đọc dữ liệu thất bại
+
+
+
+**```Spi_AsyncTransmit```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_AsyncTransmit (Spi_SequenceType Sequence)
+    ```
+- Tham số: Spi_SequenceType Sequence: Sequence cần thực hiện.
+- Chức năng: Thực thi một Sequence(chỉ truyền dữ liệu) sử dụng kiểu bất động bộ Async như SPI_POLLING_MODE hay SPI_INTERRUPT_MODE.
+- Dữ liệu trả về: Std_ReturnType
+    - E_OK: Nếu thực hiện Sequence thành công
+    - E_NOT_OK: Nếu thực hiện Sequence thất bại.
+
+
+**```Spi_SetupEB```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_SetupEB (
+        Spi_ChannelType Channel,
+        const Spi_DataBufferType* SrcDataBufferPtr,
+        Spi_DataBufferType* DesDataBufferPtr,
+        Spi_NumberOfDataType Length
+    )
+
+    ```
+- Tham số: 
+    - ```Spi_ChannelType Channel```: Kênh SPI đang sử dụng
+    - ```Spi_DataBufferType* DataBufferPtr```: Địa chỉ vùng nhớ, nơi để ghi dữ liệu và truyền đi thông qua SPI.
+    - ```Spi_DataBufferType* DesDataBufferPtr```: Địa chỉ vùng nhớ, nơi nhận dữ liệu truyền về từ SPI.
+    - ```Spi_NumberOfDataType Length```: Số lượng dữ liệu truyền nhận thông qua SPI, min = 1, max = số lượng data cấu hình SPI.
+- Chức năng: Khởi tạo vùng nhớ EB, gồm hai chịa chỉ: chứa dữ liệu gửi đi và nơi đề nhận dữ liệu về. Sau khi Setup thành công, thì SPI sẽ tự động truyền dữ liệu đến IB thông qua dữ liệu tại EB và nhận dữ liệu từ SPI sẽ được lưu vào EB. 
+- Dữ liệu trả về: Std_ReturnType
+    - E_OK: Setup thành công
+    - E_NOT_OK: Setup thất bại
+
+
+**```Spi_GetStatus```**
+
+- Cú pháp
+    ```
+    Spi_StatusType Spi_GetStatus (void)
+    ```
+- Tham số: void
+- Chức năng: Lấy trạng thai của kênh SPI, được cập nhật liên tục trong chương trình.
+- Kiểu dữ liệu trả về: ```Spi_StatusType```
+    - ```SPI_BUSY```: SPI bận
+    - ```SPI_UNINIT```: SPI chưa khởi tạo
+    - ```SPI_IDLE```: SPI rảnh
+
+**```Spi_GetJobResult```**
+
+- Cú pháp
+    ```
+    Spi_JobResultType Spi_GetJobResult (Spi_JobType Job)
+
+    ```
+- Tham số: ```Spi_JobType Job``` ID của Job đang cần kiểm tra trạng thái
+- Chức năng: Lấy trạng thái hoạt động của một Job thông qua Job ID
+- Kiểu dữ liệu trả về: ``Spi_JobResultType```
+    ```
+    SPI_JOB_OK = 0x00,      //Job đã hoàn thành
+    SPI_JOB_PENDING = 0x01, //Job đang thực hiện
+    SPI_JOB_FAILED = 0x02,  // Job thực hiện thất bại
+    SPI_JOB_QUEUED = 0x03   // Job đang chờ thực hiện 
+    ```
+
+**```Spi_GetSequenceResult```**
+
+- Cú pháp
+    ```
+    Spi_SeqResultType Spi_GetSequenceResult (Spi_SequenceType Sequence)
+
+    ```
+- Tham số: ```Spi_SequenceType Sequence``` ID của Sequence đang cần kiểm tra trạng thái
+- Chức năng: Lấy trạng thái hoạt động của một Sequence thông qua Sequence ID
+- Kiểu dữ liệu trả về: ``Spi_SeqResultType```
+    ```
+    SPI_SEQ_OK = 0x00,      //Sequence đã hoàn thành
+    SPI_SEQ_PENDING = 0x01, //Sequence đang thực hiện
+    SPI_SEQ_FAILED = 0x02,  //Sequence thực hiện thất bại
+    SPI_SEQ_CANCELED = 0x03 //Sequence đã bị hủy
+    ```
+**```Spi_GetVersionInfo```**
+
+- Cú pháp
+    ```
+    void Spi_GetVersionInfo (Std_VersionInfoType* versioninfo)
+
+    ```
+- Tham số: ```Std_VersionInfoType* versioninfo``` Địa chỉ chứa Struct version hiện tại của hệ thống
+- Chức năng: Lấy Version hiện tại của hệ thống
+
+
+**```Spi_SyncTransmit```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_SyncTransmit (Spi_SequenceType Sequence)
+
+    ```
+- Tham số: ```Spi_SequenceType Sequence``` ID của Sequence cần cài đặt kiểu thực thi đồng bộ.
+- Chức năng: Cài đặt kiểu truyền đồng bộ cho Sequence như truyền hai dữ liệu cùng lúc, hoặc nhận hai dữ liệu cùng lúc(Multi Tasks)
+- Dữ liệu trả về: Std_ReturnType
+    - E_OK: Setup thành công
+    - E_NOT_OK: Setup thất bại
+
+**```Spi_GetHWUnitStatus```**
+
+- Cú pháp
+    ```
+    Spi_StatusType Spi_GetHWUnitStatus (Spi_HWUnitType HWUnit)
+
+    ```
+- Tham số: ```Spi_HWUnitType HWUnit``` ID của bộ SPI cần kiểm tra
+- Chức năng: Trả về trạng thái của bộ SPI. 
+- Kiểu dữ liệu trả về: ```Spi_StatusType```
+    - ```SPI_BUSY```: SPI bận
+    - ```SPI_UNINIT```: SPI chưa khởi tạo
+    - ```SPI_IDLE```: SPI rảnh
+
+**```Spi_Cancel```**
+
+- Cú pháp
+    ```
+    void Spi_Cancel (Spi_SequenceType Sequence)
+    ```
+- Tham số: ```Spi_SequenceType Sequence``` ID của Sequence cần hủy
+- Chức năng: Hủy thực thi một Sequence
+
+**```Spi_SetAsyncMode```**
+
+- Cú pháp
+    ```
+    Std_ReturnType Spi_SetAsyncMode (Spi_AsyncModeType Mode)
+
+    ```
+- Tham số: ```Spi_AsyncModeType Mode``` ID của Sequence cần hủy
+- Chức năng: Hủy thực thi một Sequence
+
+</details>
+
+
